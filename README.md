@@ -126,7 +126,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 **Tommy Garner**
 - GitHub: [@tommygarner](https://github.com/tommygarner)
-- LinkedIn: [Your Profile](https://www.linkedin.com/in/tommy-garner/)
+- LinkedIn: [My Profile](https://www.linkedin.com/in/tommy-garner/)
 
 ---
 
