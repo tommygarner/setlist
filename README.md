@@ -35,8 +35,8 @@ AI-powered concert discovery that matches your music taste with upcoming shows i
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/yourusername/the-setlist.git
-cd the-setlist
+git clone https://github.com/yourusername/setlist.git
+cd setlist
 ```
 
 2. **Create virtual environment**
@@ -85,7 +85,7 @@ The app will open at `http://localhost:8501`
 ## 📂 Project Structure
 
 ```
-the-setlist/
+setlist/
 ├── app.py                    # Main Streamlit app
 ├── pages/                    # Multi-page app pages
 │   └── artist_swipe.py      # Artist preference swipe interface
