@@ -4,6 +4,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import requests
 from urllib.parse import quote
+from datetime import datetime, timedelta
 
 st.set_page_config(page_title="🎸 Artist Swipe", page_icon="🎸", layout="wide")
 
@@ -15,29 +16,82 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
+def check_session():
+    """Check and restore Supabase session"""
+    try:
+        session = supabase.auth.get_session()
+        if session and session.user:
+            st.session_state.user = session.user
+            st.session_state.authenticated = True
+    except:
+        pass
+
+check_session()
+
 # Check authentication
 if "authenticated" not in st.session_state or not st.session_state.authenticated:
-    st.error("Please login first!")
+    st.error("❌ Please login first!")
+    if st.button("← Go to Main App", key="main_app_btn"):
+        st.switch_page("app.py")
     st.stop()
 
 user = st.session_state.user
 
-# Initialize Spotify
-@st.cache_resource
-def get_spotify_client():
-    auth_manager = SpotifyOAuth(
-        client_id=st.secrets["spotify"]["CLIENT_ID"],
-        client_secret=st.secrets["spotify"]["CLIENT_SECRET"],
-        redirect_uri=st.secrets["spotify"]["REDIRECT_URI"],
-        scope="user-library-read"
-    )
-    return spotipy.Spotify(auth_manager=auth_manager)
+# Token Refresh Function
+def get_valid_spotify_token(user_id):
+    """Get valid Spotify token, refreshing if expired"""
+    try:
+        profile = supabase.table("profiles").select("*").eq("id", user_id).execute()
+        if not profile.data:
+            return None
+        
+        user_data = profile.data[0]
+        expires_at = user_data.get('spotify_token_expires_at')
+        
+        # Check if token is expired
+        if expires_at:
+            expires_datetime = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+            if datetime.now(expires_datetime.tzinfo) >= expires_datetime:
+                # Token expired - refresh it
+                st.info("🔄 Refreshing Spotify token...")
+                auth_manager = SpotifyOAuth(
+                    client_id=st.secrets["spotify"]["CLIENT_ID"],
+                    client_secret=st.secrets["spotify"]["CLIENT_SECRET"],
+                    redirect_uri=st.secrets["spotify"]["REDIRECT_URI"],
+                    scope="user-library-read user-top-read"
+                )
+                
+                refresh_token = user_data.get('spotify_refresh_token')
+                if refresh_token:
+                    token_info = auth_manager.refresh_access_token(refresh_token)
+                    
+                    # Update database with new token
+                    new_expires = datetime.utcnow() + timedelta(seconds=token_info['expires_in'])
+                    supabase.table("profiles").update({
+                        "spotify_access_token": token_info['access_token'],
+                        "spotify_token_expires_at": new_expires.isoformat()
+                    }).eq("id", user_id).execute()
+                    
+                    return token_info['access_token']
+        
+        return user_data.get('spotify_access_token')
+    except Exception as e:
+        st.error(f"Token refresh error: {str(e)}")
+        return None
 
-sp = get_spotify_client()
+# Get Spotify client with valid token
+def get_spotify_client_with_token():
+    """Get Spotify client with refreshed token"""
+    access_token = get_valid_spotify_token(user.id)
+    if not access_token:
+        st.error("❌ Spotify not connected! Please connect your Spotify first.")
+        if st.button("🎵 Go to Connect Spotify", key="connect_spotify_btn"):
+            st.switch_page("pages/1_connect_spotify.py")
+        st.stop()
+    return spotipy.Spotify(auth=access_token)
 
 # Fetch artist info from Spotify
-@st.cache_data(ttl=3600)
-def get_artist_info(artist_name):
+def get_artist_info(artist_name, sp):
     """Get artist info including image, top tracks, and albums"""
     try:
         # Search for artist
@@ -97,16 +151,12 @@ if 'current_index' not in st.session_state:
     st.session_state.current_index = 0
 
 # Load concerts from database
-@st.cache_data(ttl=300)
-def load_concerts(user_id):
-    result = supabase.table("concerts_discovered").select("*").eq("user_id", user_id).order("date").execute()
-    return result.data
-
-concerts = load_concerts(user.id)
+concerts_result = supabase.table("concerts_discovered").select("*").eq("user_id", user.id).order("date").execute()
+concerts = concerts_result.data
 
 if not concerts:
     st.info("No concerts discovered yet! Go to Discover Concerts to find shows.")
-    if st.button("🎤 Go to Discover Concerts"):
+    if st.button("🎤 Go to Discover Concerts", key="discover_concerts_btn"):
         st.switch_page("pages/2_discover_concerts.py")
     st.stop()
 
@@ -115,19 +165,22 @@ if st.session_state.current_index >= len(concerts):
     st.success("🎉 You've swiped through all concerts!")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🔄 Start Over", use_container_width=True):
+        if st.button("🔄 Start Over", use_container_width=True, key="start_over_btn"):
             st.session_state.current_index = 0
             st.rerun()
     with col2:
-        if st.button("🎤 Discover More Concerts", use_container_width=True):
+        if st.button("🎤 Discover More Concerts", use_container_width=True, key="discover_more_btn"):
             st.switch_page("pages/2_discover_concerts.py")
     st.stop()
 
 concert = concerts[st.session_state.current_index]
 
+# Get Spotify client with fresh token
+sp = get_spotify_client_with_token()
+
 # Fetch artist info
 with st.spinner(f"🔍 Loading {concert['artist_name']} info..."):
-    artist_info = get_artist_info(concert['artist_name'])
+    artist_info = get_artist_info(concert['artist_name'], sp)
 
 st.divider()
 
@@ -176,7 +229,6 @@ if artist_info:
     st.divider()
     
     # Top Tracks
-    # Top Tracks
     st.subheader("🎵 Top 5 Tracks")
     
     for i, track in enumerate(artist_info['top_tracks'], 1):
@@ -194,15 +246,14 @@ if artist_info:
                 st.caption(f"from {track['album']}")
             
             with col_spotify:
-                st.link_button("🎧", track['spotify_url'], use_container_width=True)
+                st.link_button("🎧", track['spotify_url'], use_container_width=True, key=f"spotify_track_{i}")
             
             with col_youtube:
                 youtube_url = get_youtube_search_url(f"{artist_info['name']} {track['name']}")
-                st.link_button("📺", youtube_url, use_container_width=True)
+                st.link_button("📺", youtube_url, use_container_width=True, key=f"youtube_track_{i}")
             
             st.divider()
     
-    # Top Albums
     # Top Albums
     st.subheader("💿 Top 5 Albums")
     
@@ -213,7 +264,7 @@ if artist_info:
                 st.image(album['image'], use_container_width=True)
             st.caption(f"**{album['name']}**")
             st.caption(album['release_date'][:4])
-            st.link_button("🎧", album['spotify_url'], use_container_width=True)
+            st.link_button("🎧", album['spotify_url'], use_container_width=True, key=f"album_{i}")
 
 else:
     # Fallback if Spotify API fails
