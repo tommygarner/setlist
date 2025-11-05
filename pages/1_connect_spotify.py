@@ -141,5 +141,6 @@ else:
         )
         auth_url = auth_manager.get_authorize_url()
         # FIXED: Removed key parameter - st.link_button doesn't support it
+	st.write("OAuth URL:", auth_url)
         st.link_button("🎵 Connect Spotify", auth_url, type="primary", use_container_width=True)
         st.caption("You'll be redirected to Spotify to authorize access")
