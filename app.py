@@ -25,20 +25,17 @@ if "authenticated" not in st.session_state:
 def sign_up(email: str, password: str, username: str):
     """Sign up a new user"""
     try:
-        # Create auth user
         response = supabase.auth.sign_up({
             "email": email,
-            "password": password
+            "password": password,
+            "options": {
+                "data": {
+                    "username": username
+                }
+            }
         })
         
         if response.user:
-            # Create profile
-            supabase.table("profiles").insert({
-                "id": response.user.id,
-                "username": username,
-                "email": email
-            }).execute()
-            
             return True, "Account created! Please check your email to verify."
         return False, "Sign up failed"
     except Exception as e:
@@ -71,7 +68,6 @@ def sign_out():
         st.error(f"Sign out error: {str(e)}")
         return False
 
-# Check for existing session on load
 def check_session():
     """Check if user has active session"""
     try:
@@ -81,6 +77,11 @@ def check_session():
             st.session_state.authenticated = True
     except:
         pass
+
+def ensure_session():
+    """Ensure session state is properly set"""
+    if not st.session_state.get('authenticated', False):
+        check_session()
 
 # UI Components
 def login_page():
@@ -117,7 +118,7 @@ def login_page():
             if not all([username, email, password, password_confirm]):
                 st.warning("Please fill in all fields")
             elif password != password_confirm:
-                st.error("Passwords don\'t match")
+                st.error("Passwords don't match")
             elif len(password) < 6:
                 st.error("Password must be at least 6 characters")
             else:
@@ -126,30 +127,6 @@ def login_page():
                     st.success(message)
                 else:
                     st.error(message)
-
-def get_user_preferences(user_id: str):
-    """Get user\'s artist preferences from database"""
-    try:
-        response = supabase.table("preferences").select("*").eq("user_id", user_id).execute()
-        # Convert to dict format: {artist_name: preference}
-        return {item[\'artist_name\']: item[\'preference\'] for item in response.data}
-    except Exception as e:
-        st.error(f"Error loading preferences: {str(e)}")
-        return {}
-
-def save_preference(user_id: str, artist_name: str, preference: str):
-    """Save or update user preference"""
-    try:
-        # Use upsert to insert or update
-        supabase.table("preferences").upsert({
-            "user_id": user_id,
-            "artist_name": artist_name,
-            "preference": preference
-        }).execute()
-        return True
-    except Exception as e:
-        st.error(f"Error saving preference: {str(e)}")
-        return False
 
 def main_app():
     """Main application (shown when authenticated)"""
@@ -163,7 +140,7 @@ def main_app():
         try:
             profile = supabase.table("profiles").select("username").eq("id", user.id).execute()
             if profile.data:
-                st.write(f"@{profile.data[0][\'username\']}")
+                st.write(f"@{profile.data[0]['username']}")
         except:
             pass
         
@@ -177,40 +154,59 @@ def main_app():
     st.title("🎸 The Setlist")
     st.write("**Your personalized concert discovery platform**")
     
-    # Load user preferences
-    user_preferences = get_user_preferences(user.id)
+    st.divider()
+    
+    # User Stats - REAL DATA FROM DATABASE (NO CACHE)
+    st.subheader("📊 Your Stats")
+    
+    try:
+        # Query preferences from database (fresh every time)
+        prefs_result = supabase.table("preferences").select("preference").eq("user_id", user.id).execute()
+        
+        liked_count = sum(1 for p in prefs_result.data if p['preference'] == 'liked')
+        disliked_count = sum(1 for p in prefs_result.data if p['preference'] == 'disliked')
+        total_count = len(prefs_result.data)
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Artists Liked", liked_count, delta="👍")
+        
+        with col2:
+            st.metric("Artists Disliked", disliked_count, delta="👎")
+        
+        with col3:
+            st.metric("Total Preferences", total_count)
+    
+    except Exception as e:
+        st.warning(f"Could not load stats: {str(e)}")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Artists Liked", 0)
+        with col2:
+            st.metric("Artists Disliked", 0)
+        with col3:
+            st.metric("Total Preferences", 0)
     
     st.divider()
     
-    # Example: Display preferences count
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Artists Liked", len([p for p in user_preferences.values() if p == \'liked\']))
-    with col2:
-        st.metric("Artists Disliked", len([p for p in user_preferences.values() if p == \'disliked\']))
-    with col3:
-        st.metric("Total Preferences", len(user_preferences))
-    
-    st.divider()
-    
-    # Placeholder for your existing concert discovery features
+    # Placeholder for concert discovery features
     st.subheader("🎤 Concert Discovery")
-    st.info("Your existing concert discovery features will go here!")
-    st.write("This is where you\'ll integrate:")
-    st.write("- Ticketmaster API concert listings")
-    st.write("- Spotify integration")
-    st.write("- Swipe interface")
-    st.write("- Concert recommendations")
-    
-    # Display current preferences
-    if user_preferences:
-        st.subheader("Your Artist Preferences")
-        for artist, pref in user_preferences.items():
-            emoji = "👍" if pref == "liked" else "👎"
-            st.write(f"{emoji} {artist}")
+    st.info("Your concert discovery features are ready!")
+    st.write("**Navigate using the sidebar:**")
+    st.write("- 🎵 **Connect Spotify** - Link your Spotify account")
+    st.write("- 🎤 **Discover Concerts** - Find shows from your favorite artists")
+    st.write("- 🎸 **Artist Swipe** - Swipe through concerts and choose your favorites")
 
 # Main app logic
 check_session()
+ensure_session()
+
+# Handle Spotify OAuth callback
+query_params = st.query_params
+if 'code' in query_params and st.session_state.authenticated:
+    st.switch_page("pages/1_connect_spotify.py")
 
 if st.session_state.authenticated:
     main_app()
