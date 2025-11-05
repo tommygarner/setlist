@@ -1,13 +1,3 @@
-def check_session():
-    try:
-        session = supabase.auth.get_session()
-        if session and session.user:
-            st.session_state.user = session.user
-            st.session_state.authenticated = True
-    except:
-        pass
-check_session()
-
 import streamlit as st
 from supabase import create_client, Client
 import spotipy
@@ -24,6 +14,16 @@ def init_supabase() -> Client:
     return create_client(url, key)
 
 supabase = init_supabase()
+
+def check_session():
+    try:
+        session = supabase.auth.get_session()
+        if session and session.user:
+            st.session_state.user = session.user
+            st.session_state.authenticated = True
+    except:
+        pass
+check_session()
 
 # Check authentication - MUST BE AT TOP
 if "authenticated" not in st.session_state or not st.session_state.authenticated:
