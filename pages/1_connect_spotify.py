@@ -23,12 +23,20 @@ def check_session():
             st.session_state.authenticated = True
     except:
         pass
+
+# First, check for OAuth code in URL and save it
+query_params = st.query_params
+if 'code' in query_params and 'spotify_oauth_code' not in st.session_state:
+    st.session_state.spotify_oauth_code = query_params['code']
+
+# Then check session
 check_session()
 
 # Check authentication - MUST BE AT TOP
 if "authenticated" not in st.session_state or not st.session_state.authenticated:
     st.error("❌ Please login first!")
-    if st.button("← Go to Main App", key="main_app_btn"):
+    st.info("💡 After authorizing with Spotify, you need to log back into your account.")
+    if st.button("← Go to Main App to Login", key="main_app_btn", type="primary"):
         st.switch_page("app.py")
     st.stop()
 
@@ -75,6 +83,43 @@ st.write("Link your Spotify account to discover concerts from your favorite arti
 # Check if already connected
 is_connected = check_spotify_connection(current_user.id)
 
+# Handle OAuth callback if we have a saved code
+if 'spotify_oauth_code' in st.session_state and not is_connected:
+    code = st.session_state.spotify_oauth_code
+    with st.spinner("🔗 Connecting to Spotify..."):
+        try:
+            auth_manager = SpotifyOAuth(
+                client_id=st.secrets["spotify"]["CLIENT_ID"],
+                client_secret=st.secrets["spotify"]["CLIENT_SECRET"],
+                redirect_uri=st.secrets["spotify"]["REDIRECT_URI"],
+                scope="user-library-read user-top-read"
+            )
+            token_info = auth_manager.get_access_token(code, as_dict=True, check_cache=False)
+            if token_info:
+                success = save_spotify_tokens(
+                    current_user.id,
+                    token_info['access_token'],
+                    token_info['refresh_token'],
+                    token_info['expires_in']
+                )
+                if success:
+                    # Clear the saved code
+                    del st.session_state.spotify_oauth_code
+                    st.success("✅ Spotify Connected!")
+                    st.balloons()
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error("Failed to save Spotify connection")
+                    del st.session_state.spotify_oauth_code
+            else:
+                st.error("Failed to get Spotify tokens")
+                del st.session_state.spotify_oauth_code
+        except Exception as e:
+            st.error(f"Connection error: {str(e)}")
+            if 'spotify_oauth_code' in st.session_state:
+                del st.session_state.spotify_oauth_code
+
 if is_connected:
     # Already connected
     st.success("✅ Spotify Connected!")
@@ -100,47 +145,14 @@ else:
     st.write("• Your liked songs")
     st.write("• Your top artists")
     st.divider()
-    # Handle OAuth callback
-    query_params = st.query_params
-    if 'code' in query_params:
-        code = query_params['code']
-        with st.spinner("🔗 Connecting to Spotify..."):
-            try:
-                auth_manager = SpotifyOAuth(
-                    client_id=st.secrets["spotify"]["CLIENT_ID"],
-                    client_secret=st.secrets["spotify"]["CLIENT_SECRET"],
-                    redirect_uri=st.secrets["spotify"]["REDIRECT_URI"],
-                    scope="user-library-read user-top-read"
-                )
-                token_info = auth_manager.get_access_token(code, as_dict=True, check_cache=False)
-                if token_info:
-                    success = save_spotify_tokens(
-                        current_user.id,
-                        token_info['access_token'],
-                        token_info['refresh_token'],
-                        token_info['expires_in']
-                    )
-                    if success:
-                        st.success("✅ Spotify Connected!")
-                        st.balloons()
-                        time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.error("Failed to save Spotify connection")
-                else:
-                    st.error("Failed to get Spotify tokens")
-            except Exception as e:
-                st.error(f"Connection error: {str(e)}")
-    else:
-        # Show connect button
-        auth_manager = SpotifyOAuth(
-            client_id=st.secrets["spotify"]["CLIENT_ID"],
-            client_secret=st.secrets["spotify"]["CLIENT_SECRET"],
-            redirect_uri=st.secrets["spotify"]["REDIRECT_URI"],
-            scope="user-library-read user-top-read"
-        )
-        auth_url = auth_manager.get_authorize_url()
-        # Debug line - shows the OAuth URL (remove after testing)
-        st.write("OAuth URL:", auth_url)
-        st.link_button("🎵 Connect Spotify", auth_url, type="primary", use_container_width=True)
-        st.caption("You'll be redirected to Spotify to authorize access")
+    
+    # Show connect button
+    auth_manager = SpotifyOAuth(
+        client_id=st.secrets["spotify"]["CLIENT_ID"],
+        client_secret=st.secrets["spotify"]["CLIENT_SECRET"],
+        redirect_uri=st.secrets["spotify"]["REDIRECT_URI"],
+        scope="user-library-read user-top-read"
+    )
+    auth_url = auth_manager.get_authorize_url()
+    st.link_button("🎵 Connect Spotify", auth_url, type="primary", use_container_width=True)
+    st.caption("You'll be redirected to Spotify to authorize access")
