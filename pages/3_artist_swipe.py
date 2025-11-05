@@ -246,11 +246,11 @@ if artist_info:
                 st.caption(f"from {track['album']}")
             
             with col_spotify:
-                st.link_button("🎧", track['spotify_url'], use_container_width=True, key=f"spotify_track_{i}")
+                st.link_button("🎧", track['spotify_url'], use_container_width=True)
             
             with col_youtube:
                 youtube_url = get_youtube_search_url(f"{artist_info['name']} {track['name']}")
-                st.link_button("📺", youtube_url, use_container_width=True, key=f"youtube_track_{i}")
+                st.link_button("📺", youtube_url, use_container_width=True)
             
             st.divider()
     
@@ -264,7 +264,7 @@ if artist_info:
                 st.image(album['image'], use_container_width=True)
             st.caption(f"**{album['name']}**")
             st.caption(album['release_date'][:4])
-            st.link_button("🎧", album['spotify_url'], use_container_width=True, key=f"album_{i}")
+            st.link_button("🎧", album['spotify_url'], use_container_width=True)
 
 else:
     # Fallback if Spotify API fails
