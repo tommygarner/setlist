@@ -9,6 +9,75 @@ import time
 
 st.set_page_config(page_title="🎤 Discover Concerts", page_icon="🎤", layout="wide")
 
+# Add AFTER the Discover Concerts button, before the discovery logic
+if st.button("🧪 Test SeatGeek Search", use_container_width=True):
+    st.subheader("SeatGeek API Test")
+    
+    async def test_sg():
+        async with aiohttp.ClientSession() as session:
+            # Test with a super popular artist
+            test_artists = ["Taylor Swift", "Beyoncé", "Drake"]
+            
+            for artist in test_artists:
+                st.write(f"**Testing: {artist}**")
+                
+                # Try WITHOUT location first (to see if API works at all)
+                url = "https://api.seatgeek.com/2/events"
+                params = {
+                    "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
+                    "q": artist,
+                    "type": "concert",
+                    "per_page": 5
+                }
+                
+                try:
+                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            if 'events' in data and data['events']:
+                                st.success(f"✅ Found {len(data['events'])} events (no location filter)")
+                                st.json(data['events'][0])
+                            else:
+                                st.warning(f"⚠️ No events found (no location filter)")
+                                st.json(data)
+                        else:
+                            st.error(f"❌ API Error: Status {response.status}")
+                except Exception as e:
+                    st.error(f"❌ Request failed: {str(e)}")
+                
+                st.divider()
+                
+                # Now try WITH your location
+                st.write(f"**Testing {artist} with location: {city}, {state}**")
+                params_with_location = {
+                    "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
+                    "q": artist,
+                    "venue.city": city,
+                    "venue.state": state,
+                    "range": f"{radius}mi",
+                    "type": "concert",
+                    "per_page": 5
+                }
+                
+                try:
+                    async with session.get(url, params=params_with_location, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            if 'events' in data and data['events']:
+                                st.success(f"✅ Found {len(data['events'])} events in {city}, {state}")
+                            else:
+                                st.warning(f"⚠️ No events found in {city}, {state} within {radius}mi")
+                                st.json(data)
+                        else:
+                            st.error(f"❌ API Error: Status {response.status}")
+                except Exception as e:
+                    st.error(f"❌ Request failed: {str(e)}")
+                
+                st.divider()
+    
+    asyncio.run(test_sg())
+
+
 # Initialize Supabase
 def init_supabase() -> Client:
     url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
