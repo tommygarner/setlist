@@ -17,7 +17,6 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-
 # Check authentication
 if "authenticated" not in st.session_state or not st.session_state.authenticated:
     st.error("❌ Please login first!")
@@ -38,11 +37,9 @@ def get_valid_spotify_token(user_id):
         user_data = profile.data[0]
         expires_at = user_data.get('spotify_token_expires_at')
         
-        # Check if token is expired
         if expires_at:
             expires_datetime = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
             if datetime.now(expires_datetime.tzinfo) >= expires_datetime:
-                # Token expired - refresh it
                 st.info("🔄 Refreshing Spotify token...")
                 auth_manager = SpotifyOAuth(
                     client_id=st.secrets["spotify"]["CLIENT_ID"],
@@ -54,14 +51,11 @@ def get_valid_spotify_token(user_id):
                 refresh_token = user_data.get('spotify_refresh_token')
                 if refresh_token:
                     token_info = auth_manager.refresh_access_token(refresh_token)
-                    
-                    # Update database with new token
                     new_expires = datetime.utcnow() + timedelta(seconds=token_info['expires_in'])
                     supabase.table("profiles").update({
                         "spotify_access_token": token_info['access_token'],
                         "spotify_token_expires_at": new_expires.isoformat()
                     }).eq("id", user_id).execute()
-                    
                     return token_info['access_token']
         
         return user_data.get('spotify_access_token')
@@ -74,14 +68,12 @@ def get_user_liked_artists(sp, limit=None):
     """Get unique artists from user's liked songs"""
     artists = set()
     offset = 0
-    
     progress_bar = st.progress(0)
     status = st.empty()
     
     while True:
         try:
             results = sp.current_user_saved_tracks(limit=50, offset=offset)
-            
             if not results['items']:
                 break
             
@@ -96,7 +88,6 @@ def get_user_liked_artists(sp, limit=None):
             
             if limit and len(artists) >= limit:
                 break
-            
             if len(results['items']) < 50:
                 break
         except Exception as e:
@@ -105,7 +96,6 @@ def get_user_liked_artists(sp, limit=None):
     
     progress_bar.empty()
     status.empty()
-    
     return list(artists)
 
 # Async Ticketmaster search
@@ -133,42 +123,86 @@ async def search_ticketmaster_async(session, artist_name, api_key, city, state_c
     except Exception:
         return artist_name, None
 
-async def search_all_artists_async(artists, api_key, city, state_code, radius, progress_bar, status_text):
-    """Search all artists"""
-    concerts = []
-    batch_size = 20  # Process 20 artists at once
+async def search_seatgeek_async(session, artist_name, client_id, city, state, radius):
+    url = "https://api.seatgeek.com/2/events"
+    params = {
+        "client_id": client_id,
+        "q": artist_name,
+        "venue.city": city,
+        "venue.state": state,
+        "range": f"{radius}mi",
+        "type": "concert",
+        "per_page": 25
+    }
+    try:
+        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+            if response.status == 200:
+                data = await response.json()
+                return artist_name, data
+            else:
+                return artist_name, None
+    except Exception:
+        return artist_name, None
+
+async def search_both_apis_async(artists, tm_api_key, sg_client_id, city, state_code, radius, progress_bar, status_text):
+    """Search both Ticketmaster AND SeatGeek for all artists in parallel"""
+    all_concerts = []
+    batch_size = 20
     total = len(artists)
     
     async with aiohttp.ClientSession() as session:
         for i in range(0, total, batch_size):
             batch = artists[i:i + batch_size]
             
-            # Create tasks for this batch
-            tasks = [
-                search_ticketmaster_async(session, artist, api_key, city, state_code, radius)
-                for artist in batch
-            ]
+            tm_tasks = [search_ticketmaster_async(session, artist, tm_api_key, city, state_code, radius) for artist in batch]
+            sg_tasks = [search_seatgeek_async(session, artist, sg_client_id, city, state_code, radius) for artist in batch]
             
-            # Wait for all tasks in batch to complete
-            results = await asyncio.gather(*tasks)
+            all_results = await asyncio.gather(*(tm_tasks + sg_tasks))
+            tm_results = all_results[:len(batch)]
+            sg_results = all_results[len(batch):]
             
-            # Process results
-            for artist_name, data in results:
+            for artist_name, data in tm_results:
                 if data and '_embedded' in data and 'events' in data['_embedded']:
                     for event in data['_embedded']['events']:
                         concert = parse_concert_data(event, artist_name, user.id)
                         if concert:
-                            concerts.append(concert)
+                            concert['source'] = 'ticketmaster'
+                            all_concerts.append(concert)
             
-            # Update progress
+            for artist_name, data in sg_results:
+                if data and 'events' in data:
+                    for event in data['events']:
+                        concert = parse_seatgeek_concert(event, user.id)
+                        if concert:
+                            all_concerts.append(concert)
+            
             progress = min((i + batch_size) / total, 1.0)
             progress_bar.progress(progress)
-            status_text.text(f"Searched {min(i + batch_size, total)}/{total} artists... ({len(concerts)} concerts found)")
-            
-            # Small delay to respect rate limits
+            status_text.text(f"Searched {min(i + batch_size, total)}/{total} artists... ({len(all_concerts)} concerts found from both sources)")
             await asyncio.sleep(0.5)
     
-    return concerts
+    deduplicated = deduplicate_concerts(all_concerts)
+    status_text.text(f"✅ Found {len(all_concerts)} total concerts, {len(deduplicated)} unique after deduplication")
+    return deduplicated
+
+def deduplicate_concerts(concerts):
+    """Remove duplicate concerts based on artist, venue, and date"""
+    seen = {}
+    unique = []
+    
+    for concert in concerts:
+        key = (concert['artist_name'].lower().strip(), concert['venue_name'].lower().strip(), concert['date'])
+        
+        if key not in seen:
+            seen[key] = True
+            unique.append(concert)
+        else:
+            existing = next((c for c in unique if (c['artist_name'].lower().strip(), c['venue_name'].lower().strip(), c['date']) == key), None)
+            if existing and concert.get('min_price') and not existing.get('min_price'):
+                unique.remove(existing)
+                unique.append(concert)
+    
+    return unique
 
 def parse_concert_data(event, artist_name, user_id):
     """Parse Ticketmaster event data"""
@@ -200,31 +234,10 @@ def parse_concert_data(event, artist_name, user_id):
             'max_price': max_price,
             'image_url': image_url,
             'priority_tier': 'MEDIUM',
-            'source': 'ticketmaster'  # ADD THIS LINE
+            'source': 'ticketmaster'
         }
     except Exception:
         return None
-
-async def search_seatgeek_async(session, artist_name, client_id, city, state, radius):
-    url = "https://api.seatgeek.com/2/events"
-    params = {
-        "client_id": client_id,
-        "q": artist_name,
-        "venue.city": city,
-        "venue.state": state,
-        "range": f"{radius}mi",
-        "type": "concert",
-        "per_page": 25
-    }
-    try:
-        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
-            if response.status == 200:
-                data = await response.json()
-                return artist_name, data
-            else:
-                return artist_name, None
-    except Exception:
-        return artist_name, None
 
 def parse_seatgeek_concert(event, user_id):
     try:
@@ -254,97 +267,6 @@ def parse_seatgeek_concert(event, user_id):
     except Exception:
         return None
 
-async def search_both_apis_async(artists, tm_api_key, sg_client_id, city, state_code, radius, progress_bar, status_text):
-    """Search both Ticketmaster AND SeatGeek for all artists in parallel"""
-    all_concerts = []
-    batch_size = 20
-    total = len(artists)
-    
-    async with aiohttp.ClientSession() as session:
-        for i in range(0, total, batch_size):
-            batch = artists[i:i + batch_size]
-            
-            # Create tasks for BOTH Ticketmaster AND SeatGeek
-            tm_tasks = [
-                search_ticketmaster_async(session, artist, tm_api_key, city, state_code, radius)
-                for artist in batch
-            ]
-            sg_tasks = [
-                search_seatgeek_async(session, artist, sg_client_id, city, state_code, radius)
-                for artist in batch
-            ]
-            
-            # Run both API calls in parallel
-            all_results = await asyncio.gather(*(tm_tasks + sg_tasks))
-            
-            # Split results back into TM and SG
-            tm_results = all_results[:len(batch)]
-            sg_results = all_results[len(batch):]
-            
-            # Process Ticketmaster results
-            for artist_name, data in tm_results:
-                if data and '_embedded' in data and 'events' in data['_embedded']:
-                    for event in data['_embedded']['events']:
-                        concert = parse_concert_data(event, artist_name, user.id)
-                        if concert:
-                            concert['source'] = 'ticketmaster'  # Tag source
-                            all_concerts.append(concert)
-            
-            # Process SeatGeek results
-            for artist_name, data in sg_results:
-                if data and 'events' in data:
-                    for event in data['events']:
-                        concert = parse_seatgeek_concert(event, user.id)
-                        if concert:
-                            all_concerts.append(concert)
-            
-            # Update progress
-            progress = min((i + batch_size) / total, 1.0)
-            progress_bar.progress(progress)
-            status_text.text(f"Searched {min(i + batch_size, total)}/{total} artists... ({len(all_concerts)} concerts found from both sources)")
-            
-            # Small delay to respect rate limits
-            await asyncio.sleep(0.5)
-    
-    # Deduplicate concerts (same show on both platforms)
-    deduplicated = deduplicate_concerts(all_concerts)
-    status_text.text(f"✅ Found {len(all_concerts)} total concerts, {len(deduplicated)} unique after deduplication")
-    
-    return deduplicated
-
-def deduplicate_concerts(concerts):
-    """Remove duplicate concerts based on artist, venue, and date"""
-    seen = {}
-    unique = []
-    
-    for concert in concerts:
-        # Create key from artist + venue + date
-        key = (
-            concert['artist_name'].lower().strip(),
-            concert['venue_name'].lower().strip(),
-            concert['date']
-        )
-        
-        if key not in seen:
-            seen[key] = True
-            unique.append(concert)
-        # If duplicate, keep the one with better pricing info
-        else:
-            existing = next((c for c in unique if (
-                c['artist_name'].lower().strip(),
-                c['venue_name'].lower().strip(),
-                c['date']
-            ) == key), None)
-            
-            if existing and concert.get('min_price') and not existing.get('min_price'):
-                # Replace with one that has pricing
-                unique.remove(existing)
-                unique.append(concert)
-    
-    return unique
-
-
-
 # Main Page
 st.title("🎤 Discover Concerts")
 st.write("Find concerts from your favorite Spotify artists")
@@ -361,10 +283,7 @@ if st.button("🔍 Discover Concerts", type="primary", use_container_width=True)
 
 if st.session_state.get('discovering', False):
     try:
-        # Step 1: Get Spotify artists
         st.subheader("Step 1: Fetching Your Liked Artists")
-        
-        # Get valid token (with auto-refresh)
         access_token = get_valid_spotify_token(user.id)
         
         if not access_token:
@@ -374,31 +293,18 @@ if st.session_state.get('discovering', False):
             st.session_state.discovering = False
             st.stop()
         
-        # Create Spotify client with refreshed token
         sp = spotipy.Spotify(auth=access_token)
-        
-        artists = get_user_liked_artists(sp, limit=None)  # No limit - get ALL
+        artists = get_user_liked_artists(sp, limit=None)
         st.success(f"✅ Found {len(artists)} unique artists!")
         
-        # Step 2: Search BOTH Ticketmaster AND SeatGeek (ASYNC!)
         st.subheader("Step 2: Searching for Concerts (Ticketmaster + SeatGeek)")
         st.info("⚡ Searching both Ticketmaster and SeatGeek for maximum coverage!")
         
         progress = st.progress(0)
         status = st.empty()
         
-        # Run async search for BOTH APIs in parallel
         concerts_found = asyncio.run(
-            search_both_apis_async(
-                artists,
-                st.secrets["ticketmaster"]["API_KEY"],
-                st.secrets["seatgeek"]["CLIENT_ID"],
-                city,
-                state,
-                str(radius),
-                progress,
-                status
-            )
+            search_both_apis_async(artists, st.secrets["ticketmaster"]["API_KEY"], st.secrets["seatgeek"]["CLIENT_ID"], city, state, str(radius), progress, status)
         )
         
         progress.empty()
@@ -408,19 +314,33 @@ if st.session_state.get('discovering', False):
         st.subheader("Step 3: Saving Concerts")
         
         if concerts_found:
-            # Clear old concerts
             supabase.table("concerts_discovered").delete().eq("user_id", user.id).execute()
             
-            # Insert new concerts
             saved_count = 0
+            seatgeek_count = 0
+            ticketmaster_count = 0
+            errors = []
+            
             for concert in concerts_found:
                 try:
                     supabase.table("concerts_discovered").upsert(concert, on_conflict='event_id').execute()
                     saved_count += 1
+                    
+                    if concert.get('source') == 'seatgeek':
+                        seatgeek_count += 1
+                    else:
+                        ticketmaster_count += 1
                 except Exception as e:
-                    pass  # Silently skip errors
+                    errors.append(f"Error saving {concert.get('event_name')}: {str(e)}")
             
             st.success(f"✅ Saved {saved_count} concerts!")
+            st.info(f"📊 {ticketmaster_count} from Ticketmaster, {seatgeek_count} from SeatGeek")
+            
+            if errors:
+                with st.expander("⚠️ Errors during save"):
+                    for error in errors[:10]:
+                        st.write(error)
+            
             st.balloons()
         else:
             st.info(f"No concerts found within {radius} miles of {city}, {state}. Try increasing the search radius.")
@@ -437,24 +357,15 @@ if st.session_state.get('discovering', False):
 # Display Saved Concerts
 st.divider()
 
-# Load concerts
 concerts = supabase.table("concerts_discovered").select("*").eq("user_id", user.id).order("date").execute()
 
 if concerts.data:
-    # FILTERS
     st.subheader("🔍 Filter Concerts")
     
     filter_col1, filter_col2, filter_col3 = st.columns(3)
     
     with filter_col1:
-        date_filter = st.selectbox("Date Range", [
-            "All Dates",
-            "This Month",
-            "Next 3 Months",
-            "Next 6 Months",
-            "2025 Only",
-            "2026 Only"
-        ])
+        date_filter = st.selectbox("Date Range", ["All Dates", "This Month", "Next 3 Months", "Next 6 Months", "2025 Only", "2026 Only"])
     
     with filter_col2:
         venue_options = ["All Venues"] + sorted(list(set([c['venue_name'] for c in concerts.data])))
@@ -463,10 +374,7 @@ if concerts.data:
     with filter_col3:
         sort_by = st.selectbox("Sort By", ["Date (Earliest)", "Date (Latest)", "Artist Name"])
     
-    # Apply filters
     filtered_concerts = concerts.data
-    
-    # Date filter
     now = datetime.now()
     
     if date_filter == "This Month":
@@ -483,11 +391,9 @@ if concerts.data:
     elif date_filter == "2026 Only":
         filtered_concerts = [c for c in filtered_concerts if c['date'] and c['date'].startswith("2026")]
     
-    # Venue filter
     if venue_filter != "All Venues":
         filtered_concerts = [c for c in filtered_concerts if c['venue_name'] == venue_filter]
     
-    # Sort
     if sort_by == "Date (Earliest)":
         filtered_concerts = sorted(filtered_concerts, key=lambda x: x['date'] or "9999")
     elif sort_by == "Date (Latest)":
@@ -500,7 +406,6 @@ if concerts.data:
     st.divider()
     st.subheader("🎸 Your Discovered Concerts")
     
-    # Display filtered concerts
     for concert in filtered_concerts:
         with st.container():
             col1, col2, col3 = st.columns([3, 2, 1])
@@ -509,16 +414,19 @@ if concerts.data:
                 st.markdown(f"### {concert['event_name']}")
                 st.write(f"🎤 **{concert['artist_name']}**")
                 st.write(f"📍 {concert['venue_name']}, {concert['city']}, {concert['state']}")
+                # Show source
+                source_emoji = "🎟️" if concert.get('source') == 'ticketmaster' else "💺"
+                st.caption(f"{source_emoji} {concert.get('source', 'ticketmaster').title()}")
             
             with col2:
                 st.write(f"📅 **Date:** {concert['date']}")
-                if concert['time']:
+                if concert.get('time'):
                     st.write(f"🕐 **Time:** {concert['time']}")
-                if concert['min_price'] and concert['max_price']:
+                if concert.get('min_price') and concert.get('max_price'):
                     st.write(f"💰 **Price:** ${concert['min_price']} - ${concert['max_price']}")
             
             with col3:
-                if concert['ticket_url']:
+                if concert.get('ticket_url'):
                     st.link_button("🎟️ Get Tickets", concert['ticket_url'])
             
             st.divider()
