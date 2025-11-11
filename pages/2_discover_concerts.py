@@ -5,7 +5,6 @@ from spotipy.oauth2 import SpotifyOAuth
 import aiohttp
 import asyncio
 from datetime import datetime, timedelta
-import time
 
 st.set_page_config(page_title="🎤 Discover Concerts", page_icon="🎤", layout="wide")
 
@@ -123,8 +122,17 @@ async def search_ticketmaster_async(session, artist_name, api_key, city, state_c
     except Exception:
         return artist_name, None
 
+# Async SeatGeek search (WITH HEADERS FIX!)
 async def search_seatgeek_async(session, artist_name, client_id, city, state, radius):
+    """Async search SeatGeek for a single artist"""
     url = "https://api.seatgeek.com/2/events"
+    
+    # ✅ ADD HEADERS - This fixes the 406 error!
+    headers = {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0'
+    }
+    
     params = {
         "client_id": client_id,
         "q": artist_name,
@@ -134,8 +142,9 @@ async def search_seatgeek_async(session, artist_name, client_id, city, state, ra
         "type": "concert",
         "per_page": 25
     }
+    
     try:
-        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+        async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
             if response.status == 200:
                 data = await response.json()
                 return artist_name, data
@@ -166,7 +175,6 @@ async def search_both_apis_async(artists, tm_api_key, sg_client_id, city, state_
                     for event in data['_embedded']['events']:
                         concert = parse_concert_data(event, artist_name, user.id)
                         if concert:
-                            concert['source'] = 'ticketmaster'
                             all_concerts.append(concert)
             
             for artist_name, data in sg_results:
@@ -271,79 +279,11 @@ def parse_seatgeek_concert(event, user_id):
 st.title("🎤 Discover Concerts")
 st.write("Find concerts from your favorite Spotify artists")
 
-# Configuration
+# Configuration (ONLY DEFINED ONCE!)
 st.sidebar.header("🎯 Search Settings")
 city = st.sidebar.text_input("City", value=st.secrets["ticketmaster"]["CITY"])
 state = st.sidebar.text_input("State Code", value=st.secrets["ticketmaster"]["STATE_CODE"])
 radius = st.sidebar.slider("Search Radius (miles)", 10, 200, int(st.secrets["ticketmaster"]["SEARCH_RADIUS"]))
-
-# Configuration
-st.sidebar.header("🎯 Search Settings")
-city = st.sidebar.text_input("City", value=st.secrets["ticketmaster"]["CITY"])
-state = st.sidebar.text_input("State Code", value=st.secrets["ticketmaster"]["STATE_CODE"])
-radius = st.sidebar.slider("Search Radius (miles)", 10, 200, int(st.secrets["ticketmaster"]["SEARCH_RADIUS"]))
-
-# ✅ PUT TEST BUTTON HERE (AFTER city/state are defined)
-if st.button("🧪 Test SeatGeek Search", use_container_width=True):
-    st.subheader("SeatGeek API Test")
-    
-    async def test_sg():
-        async with aiohttp.ClientSession() as session:
-            test_artists = ["Taylor Swift"]
-            
-            for artist in test_artists:
-                st.write(f"**Testing: {artist}**")
-                
-                url = "https://api.seatgeek.com/2/events"
-                
-                # Test WITHOUT headers first
-                params = {
-                    "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
-                    "q": artist,
-                    "type": "concert",
-                    "per_page": 5
-                }
-                
-                st.write("**Without headers:**")
-                try:
-                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                        st.write(f"Status: {response.status}")
-                        if response.status == 200:
-                            data = await response.json()
-                            st.success(f"✅ Found {len(data.get('events', []))} events")
-                        else:
-                            st.error(f"❌ Error {response.status}")
-                except Exception as e:
-                    st.error(f"Exception: {str(e)}")
-                
-                st.divider()
-                
-                # Test WITH headers
-                headers = {
-                    'Accept': 'application/json',
-                    'User-Agent': 'Mozilla/5.0'
-                }
-                
-                st.write("**With headers:**")
-                try:
-                    async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                        st.write(f"Status: {response.status}")
-                        if response.status == 200:
-                            data = await response.json()
-                            st.success(f"✅ Found {len(data.get('events', []))} events")
-                            if data.get('events'):
-                                st.json(data['events'][0])
-                        else:
-                            st.error(f"❌ Error {response.status}")
-                except Exception as e:
-                    st.error(f"Exception: {str(e)}")
-    
-    asyncio.run(test_sg())
-
-# Discovery Button (your existing button below)
-if st.button("🔍 Discover Concerts", type="primary", use_container_width=True):
-    st.session_state.discovering = True
-
 
 # Discovery Button
 if st.button("🔍 Discover Concerts", type="primary", use_container_width=True):
@@ -378,7 +318,6 @@ if st.session_state.get('discovering', False):
         progress.empty()
         status.empty()
         
-        # Step 3: Save to Database
         st.subheader("Step 3: Saving Concerts")
         
         if concerts_found:
@@ -482,7 +421,6 @@ if concerts.data:
                 st.markdown(f"### {concert['event_name']}")
                 st.write(f"🎤 **{concert['artist_name']}**")
                 st.write(f"📍 {concert['venue_name']}, {concert['city']}, {concert['state']}")
-                # Show source
                 source_emoji = "🎟️" if concert.get('source') == 'ticketmaster' else "💺"
                 st.caption(f"{source_emoji} {concert.get('source', 'ticketmaster').title()}")
             
