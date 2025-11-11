@@ -9,70 +9,6 @@ import time
 
 st.set_page_config(page_title="🎤 Discover Concerts", page_icon="🎤", layout="wide")
 
-if st.button("🧪 Test SeatGeek Search", use_container_width=True):
-    st.subheader("SeatGeek API Test")
-    
-    # Get city/state from sidebar BEFORE async function
-    test_city = city
-    test_state = state
-    test_radius = radius
-    sg_client_id = st.secrets["seatgeek"]["CLIENT_ID"]
-    
-    async def test_sg():
-        async with aiohttp.ClientSession() as session:
-            test_artists = ["Taylor Swift"]
-            
-            for artist in test_artists:
-                st.write(f"**Testing: {artist}**")
-                
-                url = "https://api.seatgeek.com/2/events"
-                
-                # Test WITHOUT headers first
-                params = {
-                    "client_id": sg_client_id,
-                    "q": artist,
-                    "type": "concert",
-                    "per_page": 5
-                }
-                
-                st.write("**Without headers:**")
-                try:
-                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                        st.write(f"Status: {response.status}")
-                        if response.status == 200:
-                            data = await response.json()
-                            st.success(f"✅ Found {len(data.get('events', []))} events")
-                        else:
-                            st.error(f"❌ Error {response.status}")
-                except Exception as e:
-                    st.error(f"Exception: {str(e)}")
-                
-                st.divider()
-                
-                # Test WITH headers
-                headers = {
-                    'Accept': 'application/json',
-                    'User-Agent': 'Mozilla/5.0'
-                }
-                
-                st.write("**With headers:**")
-                try:
-                    async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                        st.write(f"Status: {response.status}")
-                        if response.status == 200:
-                            data = await response.json()
-                            st.success(f"✅ Found {len(data.get('events', []))} events")
-                            if data.get('events'):
-                                st.json(data['events'][0])
-                        else:
-                            st.error(f"❌ Error {response.status}")
-                except Exception as e:
-                    st.error(f"Exception: {str(e)}")
-    
-    asyncio.run(test_sg())
-
-
-
 # Initialize Supabase
 def init_supabase() -> Client:
     url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
@@ -340,6 +276,74 @@ st.sidebar.header("🎯 Search Settings")
 city = st.sidebar.text_input("City", value=st.secrets["ticketmaster"]["CITY"])
 state = st.sidebar.text_input("State Code", value=st.secrets["ticketmaster"]["STATE_CODE"])
 radius = st.sidebar.slider("Search Radius (miles)", 10, 200, int(st.secrets["ticketmaster"]["SEARCH_RADIUS"]))
+
+# Configuration
+st.sidebar.header("🎯 Search Settings")
+city = st.sidebar.text_input("City", value=st.secrets["ticketmaster"]["CITY"])
+state = st.sidebar.text_input("State Code", value=st.secrets["ticketmaster"]["STATE_CODE"])
+radius = st.sidebar.slider("Search Radius (miles)", 10, 200, int(st.secrets["ticketmaster"]["SEARCH_RADIUS"]))
+
+# ✅ PUT TEST BUTTON HERE (AFTER city/state are defined)
+if st.button("🧪 Test SeatGeek Search", use_container_width=True):
+    st.subheader("SeatGeek API Test")
+    
+    async def test_sg():
+        async with aiohttp.ClientSession() as session:
+            test_artists = ["Taylor Swift"]
+            
+            for artist in test_artists:
+                st.write(f"**Testing: {artist}**")
+                
+                url = "https://api.seatgeek.com/2/events"
+                
+                # Test WITHOUT headers first
+                params = {
+                    "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
+                    "q": artist,
+                    "type": "concert",
+                    "per_page": 5
+                }
+                
+                st.write("**Without headers:**")
+                try:
+                    async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        st.write(f"Status: {response.status}")
+                        if response.status == 200:
+                            data = await response.json()
+                            st.success(f"✅ Found {len(data.get('events', []))} events")
+                        else:
+                            st.error(f"❌ Error {response.status}")
+                except Exception as e:
+                    st.error(f"Exception: {str(e)}")
+                
+                st.divider()
+                
+                # Test WITH headers
+                headers = {
+                    'Accept': 'application/json',
+                    'User-Agent': 'Mozilla/5.0'
+                }
+                
+                st.write("**With headers:**")
+                try:
+                    async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        st.write(f"Status: {response.status}")
+                        if response.status == 200:
+                            data = await response.json()
+                            st.success(f"✅ Found {len(data.get('events', []))} events")
+                            if data.get('events'):
+                                st.json(data['events'][0])
+                        else:
+                            st.error(f"❌ Error {response.status}")
+                except Exception as e:
+                    st.error(f"Exception: {str(e)}")
+    
+    asyncio.run(test_sg())
+
+# Discovery Button (your existing button below)
+if st.button("🔍 Discover Concerts", type="primary", use_container_width=True):
+    st.session_state.discovering = True
+
 
 # Discovery Button
 if st.button("🔍 Discover Concerts", type="primary", use_container_width=True):
