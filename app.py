@@ -1,9 +1,13 @@
 import streamlit as st
 from supabase import create_client, Client
 import os
+import secrets
 
 # Page config
 st.set_page_config(page_title="The Setlist", page_icon="🎸", layout="wide")
+
+if 'session_id' not in st.session_state:
+    st.session_state.session_id = secrets.token_urlsafe(16)
 
 # Initialize Supabase connection
 def init_supabase() -> Client:
