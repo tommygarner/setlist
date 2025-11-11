@@ -9,73 +9,68 @@ import time
 
 st.set_page_config(page_title="🎤 Discover Concerts", page_icon="🎤", layout="wide")
 
-# Add AFTER the Discover Concerts button, before the discovery logic
 if st.button("🧪 Test SeatGeek Search", use_container_width=True):
     st.subheader("SeatGeek API Test")
     
+    # Get city/state from sidebar BEFORE async function
+    test_city = city
+    test_state = state
+    test_radius = radius
+    sg_client_id = st.secrets["seatgeek"]["CLIENT_ID"]
+    
     async def test_sg():
         async with aiohttp.ClientSession() as session:
-            # Test with a super popular artist
-            test_artists = ["Taylor Swift", "Beyoncé", "Drake"]
+            test_artists = ["Taylor Swift"]
             
             for artist in test_artists:
                 st.write(f"**Testing: {artist}**")
                 
-                # Try WITHOUT location first (to see if API works at all)
                 url = "https://api.seatgeek.com/2/events"
+                
+                # Test WITHOUT headers first
                 params = {
-                    "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
+                    "client_id": sg_client_id,
                     "q": artist,
                     "type": "concert",
                     "per_page": 5
                 }
                 
+                st.write("**Without headers:**")
                 try:
                     async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        st.write(f"Status: {response.status}")
                         if response.status == 200:
                             data = await response.json()
-                            if 'events' in data and data['events']:
-                                st.success(f"✅ Found {len(data['events'])} events (no location filter)")
-                                st.json(data['events'][0])
-                            else:
-                                st.warning(f"⚠️ No events found (no location filter)")
-                                st.json(data)
+                            st.success(f"✅ Found {len(data.get('events', []))} events")
                         else:
-                            st.error(f"❌ API Error: Status {response.status}")
+                            st.error(f"❌ Error {response.status}")
                 except Exception as e:
-                    st.error(f"❌ Request failed: {str(e)}")
+                    st.error(f"Exception: {str(e)}")
                 
                 st.divider()
                 
-                # Now try WITH your location
-                st.write(f"**Testing {artist} with location: {city}, {state}**")
-                params_with_location = {
-                    "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
-                    "q": artist,
-                    "venue.city": city,
-                    "venue.state": state,
-                    "range": f"{radius}mi",
-                    "type": "concert",
-                    "per_page": 5
+                # Test WITH headers
+                headers = {
+                    'Accept': 'application/json',
+                    'User-Agent': 'Mozilla/5.0'
                 }
                 
+                st.write("**With headers:**")
                 try:
-                    async with session.get(url, params=params_with_location, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    async with session.get(url, params=params, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        st.write(f"Status: {response.status}")
                         if response.status == 200:
                             data = await response.json()
-                            if 'events' in data and data['events']:
-                                st.success(f"✅ Found {len(data['events'])} events in {city}, {state}")
-                            else:
-                                st.warning(f"⚠️ No events found in {city}, {state} within {radius}mi")
-                                st.json(data)
+                            st.success(f"✅ Found {len(data.get('events', []))} events")
+                            if data.get('events'):
+                                st.json(data['events'][0])
                         else:
-                            st.error(f"❌ API Error: Status {response.status}")
+                            st.error(f"❌ Error {response.status}")
                 except Exception as e:
-                    st.error(f"❌ Request failed: {str(e)}")
-                
-                st.divider()
+                    st.error(f"Exception: {str(e)}")
     
     asyncio.run(test_sg())
+
 
 
 # Initialize Supabase
