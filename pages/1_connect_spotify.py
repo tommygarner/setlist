@@ -15,22 +15,11 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-def check_session():
-    try:
-        session = supabase.auth.get_session()
-        if session and session.user:
-            st.session_state.user = session.user
-            st.session_state.authenticated = True
-    except:
-        pass
-
 # First, check for OAuth code in URL and save it
 query_params = st.query_params
 if 'code' in query_params and 'spotify_oauth_code' not in st.session_state:
     st.session_state.spotify_oauth_code = query_params['code']
 
-# Then check session
-check_session()
 
 # Check authentication - MUST BE AT TOP
 if "authenticated" not in st.session_state or not st.session_state.authenticated:

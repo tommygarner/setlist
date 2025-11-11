@@ -6,14 +6,13 @@ import os
 st.set_page_config(page_title="The Setlist", page_icon="🎸", layout="wide")
 
 # Initialize Supabase connection
-@st.cache_resource
 def init_supabase() -> Client:
-    """Initialize Supabase client"""
+    """Initialize Supabase client (no cache - each call gets fresh client)"""
     url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
     key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
     return create_client(url, key)
 
-supabase = init_supabase()
+supabase = init_supabase()  # Creates a fresh client per session
 
 # Session state initialization
 if "user" not in st.session_state:
@@ -198,10 +197,6 @@ def main_app():
     st.write("- 🎵 **Connect Spotify** - Link your Spotify account")
     st.write("- 🎤 **Discover Concerts** - Find shows from your favorite artists")
     st.write("- 🎸 **Artist Swipe** - Swipe through concerts and choose your favorites")
-
-# Main app logic
-check_session()
-ensure_session()
 
 # Handle Spotify OAuth callback
 query_params = st.query_params

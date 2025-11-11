@@ -16,17 +16,6 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-def check_session():
-    """Check and restore Supabase session"""
-    try:
-        session = supabase.auth.get_session()
-        if session and session.user:
-            st.session_state.user = session.user
-            st.session_state.authenticated = True
-    except:
-        pass
-
-check_session()
 
 # Check authentication
 if "authenticated" not in st.session_state or not st.session_state.authenticated:
