@@ -12,7 +12,7 @@ def init_supabase() -> Client:
     key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
     return create_client(url, key)
 
-supabase = init_supabase()  # Creates a fresh client per session
+supabase = init_supabase()
 
 # Session state initialization
 if "user" not in st.session_state:
@@ -66,21 +66,6 @@ def sign_out():
     except Exception as e:
         st.error(f"Sign out error: {str(e)}")
         return False
-
-def check_session():
-    """Check if user has active session"""
-    try:
-        session = supabase.auth.get_session()
-        if session:
-            st.session_state.user = session.user
-            st.session_state.authenticated = True
-    except:
-        pass
-
-def ensure_session():
-    """Ensure session state is properly set"""
-    if not st.session_state.get('authenticated', False):
-        check_session()
 
 # UI Components
 def login_page():
@@ -169,13 +154,13 @@ def main_app():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.metric("Total Artists Liked", liked_count, delta="👍")
+            st.metric("Artists Liked", liked_count, delta="👍")
         
         with col2:
-            st.metric("Total Artists Disliked", disliked_count, delta="👎")
+            st.metric("Artists Disliked", disliked_count, delta="👎")
         
         with col3:
-            st.metric("Total Decisions", total_count)
+            st.metric("Total Preferences", total_count)
     
     except Exception as e:
         st.warning(f"Could not load stats: {str(e)}")
@@ -198,6 +183,7 @@ def main_app():
     st.write("- 🎤 **Discover Concerts** - Find shows from your favorite artists")
     st.write("- 🎸 **Artist Swipe** - Swipe through concerts and choose your favorites")
 
+# Main app logic - NO AUTO SESSION CHECKS
 # Handle Spotify OAuth callback
 query_params = st.query_params
 if 'code' in query_params and st.session_state.authenticated:
