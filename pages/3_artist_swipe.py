@@ -15,8 +15,24 @@ import requests
 import base64
 from urllib.parse import quote
 from supabase import create_client, Client
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Artist Swipe", page_icon="🎵", layout="wide")
+
+if 'scroll_to_top' not in st.session_state:
+    st.session_state.scroll_to_top = False
+
+if st.session_state.scroll_to_top:
+    components.html(
+        """
+        <script>
+            window.parent.document.querySelector('section.main').scrollTo(0, 0);
+        </script>
+        """,
+        height=0,
+    )
+    st.session_state.scroll_to_top = False
+
 
 # ==================== SPOTIFY API SETUP ====================
 SPOTIFY_CLIENT_ID = "684f79d886db4d05829a92140ea463c1"
@@ -210,6 +226,7 @@ if st.session_state.show_review_page:
                         st.session_state.prefs['liked'].remove(artist)
                         st.session_state.prefs['disliked'].append(artist)
                         save_preference(user.id, artist, 'disliked')
+			                  st.session_state.scroll_to_top = True
                         st.rerun()
         else:
             st.caption("No liked artists yet")
@@ -227,6 +244,7 @@ if st.session_state.show_review_page:
                         st.session_state.prefs['disliked'].remove(artist)
                         st.session_state.prefs['liked'].append(artist)
                         save_preference(user.id, artist, 'liked')
+			                  st.session_state.scroll_to_top = True
                         st.rerun()
         else:
             st.caption("No passed artists yet")
@@ -459,6 +477,7 @@ with col2:
                 st.session_state.current_idx -= 1
 
                 supabase.table("preferences").delete().eq("user_id", user.id).eq("artist_name", last_artist).execute()
+		            st.session_state.scroll_to_top = True
                 st.rerun()
 
 with col3:
