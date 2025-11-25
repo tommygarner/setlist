@@ -355,15 +355,18 @@ if top_tracks:
         if track['preview_url']:
             st.audio(track['preview_url'], format="audio/mp3")
         else:
-            # Create safe key using artist index instead of name
-            safe_key = f"{st.session_state.current_idx}_{i}"
+            # Only show buttons if URLs exist
+            if track.get('spotify_url'):
+                safe_key = f"{st.session_state.current_idx}_{i}"
 
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.link_button("🎵 Spotify", track['spotify_url'], use_container_width=True, key=f"spotify_{safe_key}")
-            with col_b:
-                youtube_url = get_youtube_search_url(track['artist'], track['name'])
-                st.link_button("▶️ YouTube", youtube_url, use_container_width=True, key=f"youtube_{safe_key}")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.link_button("🎵 Spotify", track['spotify_url'], use_container_width=True, key=f"spotify_{safe_key}")
+                with col_b:
+                    youtube_url = get_youtube_search_url(track['artist'], track['name'])
+                    st.link_button("▶️ YouTube", youtube_url, use_container_width=True, key=f"youtube_{safe_key}")
+            else:
+                st.caption("🔇 No preview available")
 
 # ==================== ALBUMS ====================
 if albums:
