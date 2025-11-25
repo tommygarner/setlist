@@ -456,6 +456,7 @@ with col1:
         })
         st.session_state.current_idx += 1
         save_preference(user.id, artist, 'disliked')
+        st.session_state.scroll_to_top = True
         st.rerun()
 
 with col2:
@@ -490,17 +491,8 @@ with col3:
         })
         st.session_state.current_idx += 1
         save_preference(user.id, artist, 'liked')
+        st.session_state.scroll_to_top = True
         st.rerun()
-
-# Auto-scroll to top using HTML/CSS after rerun
-st.markdown("""
-    <script>
-        // Scroll to top immediately
-        setTimeout(function() {
-            window.parent.document.querySelector('section.main').scrollTo({top: 0, behavior: 'smooth'});
-        }, 100);
-    </script>
-""", unsafe_allow_html=True)
 
 # Show progress
 st.caption(f"Concert {st.session_state.current_idx + 1} of {total_artists}")
