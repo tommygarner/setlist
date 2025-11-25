@@ -359,19 +359,53 @@ if top_tracks:
                 safe_key = f"{st.session_state.current_idx}_{i}"
                 
                 col_a, col_b = st.columns(2)
+                
                 with col_a:
-                    if st.button("🎵 Listen on Spotify", key=f"spotify_{safe_key}", use_container_width=True, type="primary"):
-                        st.markdown(f'<meta http-equiv="refresh" content="0; url={track["spotify_url"]}">', unsafe_allow_html=True)
-                        st.toast("Opening Spotify...")
+                    # Spotify button - opens in new tab
+                    spotify_html = f"""
+                    <a href="{track['spotify_url']}" target="_blank" style="text-decoration: none;">
+                        <button style="
+                            background-color: #1DB954;
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            font-size: 16px;
+                            border-radius: 5px;
+                            cursor: pointer;
+                            width: 100%;
+                            font-weight: bold;
+                        ">
+                            🎵 Listen on Spotify
+                        </button>
+                    </a>
+                    """
+                    st.markdown(spotify_html, unsafe_allow_html=True)
+                
                 with col_b:
+                    # YouTube button - opens in new tab
                     youtube_url = get_youtube_search_url(track['artist'], track['name'])
-                    if st.button("▶️ Find on YouTube", key=f"youtube_{safe_key}", use_container_width=True):
-                        st.markdown(f'<meta http-equiv="refresh" content="0; url={youtube_url}">', unsafe_allow_html=True)
-                        st.toast("Opening YouTube...")
+                    youtube_html = f"""
+                    <a href="{youtube_url}" target="_blank" style="text-decoration: none;">
+                        <button style="
+                            background-color: #FF0000;
+                            color: white;
+                            border: none;
+                            padding: 10px 20px;
+                            font-size: 16px;
+                            border-radius: 5px;
+                            cursor: pointer;
+                            width: 100%;
+                            font-weight: bold;
+                        ">
+                            ▶️ Find on YouTube
+                        </button>
+                    </a>
+                    """
+                    st.markdown(youtube_html, unsafe_allow_html=True)
             else:
                 st.caption("🔇 No preview available")
             
-            st.markdown("")  # Spacing between tracks
+            st.markdown("")  # Spacing
 
 
 # ==================== ALBUMS ====================
