@@ -235,6 +235,7 @@ if st.session_state.show_review_page:
 
 # ==================== MAIN UI ====================
 st.title("🎸 Artist Swipe")
+st.markdown('<div id="top"></div>', unsafe_allow_html=True)
 st.markdown("Discover artists and decide if you want to see them live!")
 
 # Progress
@@ -424,6 +425,7 @@ st.markdown("---")
 st.markdown("### What do you think?")
 
 # Main swipe buttons
+# Main swipe buttons
 col1, col2, col3 = st.columns([1, 1, 1])
 
 with col1:
@@ -436,18 +438,10 @@ with col1:
         })
         st.session_state.current_idx += 1
         save_preference(user.id, artist, 'disliked')
-        
-        # Scroll to top
-        st.markdown("""
-            <script>
-                window.parent.document.querySelector('section.main').scrollTo(0, 0);
-            </script>
-        """, unsafe_allow_html=True)
-        
         st.rerun()
 
 with col2:
-    # Undo button (only show if we've made at least one swipe)
+    # Undo button
     if st.session_state.current_idx > 0:
         if st.button("↩️ Undo", use_container_width=True, type="secondary"):
             last_history = st.session_state.prefs['swipe_history'][-1] if st.session_state.prefs['swipe_history'] else None
@@ -464,16 +458,7 @@ with col2:
                 st.session_state.prefs['swipe_history'].pop()
                 st.session_state.current_idx -= 1
 
-                # Delete from database
                 supabase.table("preferences").delete().eq("user_id", user.id).eq("artist_name", last_artist).execute()
-                
-                # Scroll to top
-                st.markdown("""
-                    <script>
-                        window.parent.document.querySelector('section.main').scrollTo(0, 0);
-                    </script>
-                """, unsafe_allow_html=True)
-                
                 st.rerun()
 
 with col3:
@@ -486,15 +471,17 @@ with col3:
         })
         st.session_state.current_idx += 1
         save_preference(user.id, artist, 'liked')
-        
-        # Scroll to top
-        st.markdown("""
-            <script>
-                window.parent.document.querySelector('section.main').scrollTo(0, 0);
-            </script>
-        """, unsafe_allow_html=True)
-        
         st.rerun()
+
+# Auto-scroll to top using HTML/CSS after rerun
+st.markdown("""
+    <script>
+        // Scroll to top immediately
+        setTimeout(function() {
+            window.parent.document.querySelector('section.main').scrollTo({top: 0, behavior: 'smooth'});
+        }, 100);
+    </script>
+""", unsafe_allow_html=True)
 
 # Show progress
 st.caption(f"Concert {st.session_state.current_idx + 1} of {total_artists}")
