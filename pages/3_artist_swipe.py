@@ -423,6 +423,7 @@ if albums:
 st.markdown("---")
 st.markdown("### What do you think?")
 
+# Main swipe buttons
 col1, col2, col3 = st.columns([1, 1, 1])
 
 with col1:
@@ -435,6 +436,14 @@ with col1:
         })
         st.session_state.current_idx += 1
         save_preference(user.id, artist, 'disliked')
+        
+        # Scroll to top
+        st.markdown("""
+            <script>
+                window.parent.document.querySelector('section.main').scrollTo(0, 0);
+            </script>
+        """, unsafe_allow_html=True)
+        
         st.rerun()
 
 with col2:
@@ -457,6 +466,14 @@ with col2:
 
                 # Delete from database
                 supabase.table("preferences").delete().eq("user_id", user.id).eq("artist_name", last_artist).execute()
+                
+                # Scroll to top
+                st.markdown("""
+                    <script>
+                        window.parent.document.querySelector('section.main').scrollTo(0, 0);
+                    </script>
+                """, unsafe_allow_html=True)
+                
                 st.rerun()
 
 with col3:
@@ -469,6 +486,14 @@ with col3:
         })
         st.session_state.current_idx += 1
         save_preference(user.id, artist, 'liked')
+        
+        # Scroll to top
+        st.markdown("""
+            <script>
+                window.parent.document.querySelector('section.main').scrollTo(0, 0);
+            </script>
+        """, unsafe_allow_html=True)
+        
         st.rerun()
 
 # Show progress
