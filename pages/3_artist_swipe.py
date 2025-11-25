@@ -347,24 +347,20 @@ with col_info:
 if top_tracks:
     st.markdown("---")
     st.markdown("### 🎵 Top 5 Tracks")
-
+    
     for i, track in enumerate(top_tracks[:5], 1):
         st.markdown(f"**{i}. {track['name']}**")
         st.caption(f"from {track['album_name']}")
-
+        
         if track['preview_url']:
             st.audio(track['preview_url'], format="audio/mp3")
         elif track.get('spotify_url'):
-            safe_key = f"{st.session_state.current_idx}_{i}"
-
-            col_a, col_b = st.columns(2)
-            with col_a:
-                st.link_button("🎵 Spotify", track['spotify_url'], key=f"spotify_{safe_key}")
-            with col_b:
-                youtube_url = get_youtube_search_url(track['artist'], track['name'])
-                st.link_button("▶️ YouTube", youtube_url, key=f"youtube_{safe_key}")
+            youtube_url = get_youtube_search_url(track['artist'], track['name'])
+            st.markdown(f"[🎵 Listen on Spotify]({track['spotify_url']}) • [▶️ Find on YouTube]({youtube_url})")
         else:
             st.caption("🔇 No preview available")
+        
+        st.markdown("")  # Add spacing
 
 # ==================== ALBUMS ====================
 if albums:
