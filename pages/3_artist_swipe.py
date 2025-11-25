@@ -357,10 +357,10 @@ if top_tracks:
         else:
             col_a, col_b = st.columns(2)
             with col_a:
-                st.link_button("🎵 Spotify", track['spotify_url'], use_container_width=True, key=f"spotify_{i}")
+                st.link_button("🎵 Spotify", track['spotify_url'], use_container_width=True, key=f"spotify_track_{artist}_{i}")
             with col_b:
                 youtube_url = get_youtube_search_url(track['artist'], track['name'])
-                st.link_button("▶️ YouTube", youtube_url, use_container_width=True, key=f"youtube_{i}")
+                st.link_button("▶️ YouTube", youtube_url, use_container_width=True, key=f"youtube_track_{artist}_{i}")
 
 # ==================== ALBUMS ====================
 if albums:
