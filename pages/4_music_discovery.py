@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from supabase import create_client, Client
 import random
+import time
 
 st.set_page_config(page_title="Music Discovery", page_icon="✨", layout="wide")
 
@@ -31,30 +32,31 @@ user = st.session_state.user
 def get_user_liked_artists():
     """Get user's liked artists from preferences"""
     response = supabase.table("preferences").select("artist_name").eq("user_id", user.id).eq("preference", "liked").execute()
-    return [pref['artist_name'] for pref in response.data]
+    return [pref['artist_name'] for pref in response.data if pref.get('artist_name')]
 
-def search_seatgeek_performer(artist_name):
-    """Search for performer on SeatGeek"""
-    url = "https://api.seatgeek.com/2/performers"
+def safe_seatgeek_request(url, params, timeout=10):
+    """Make SeatGeek request with proper headers and error handling"""
     headers = {
         'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-    }
-    params = {
-        "client_id": SEATGEEK_CLIENT_ID,
-        "q": artist_name,
-        "per_page": 1
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=5)
+        response = requests.get(url, params=params, headers=headers, timeout=timeout)
+        
         if response.status_code == 200:
-            data = response.json()
-            if data.get('performers'):
-                return data['performers'][0]['id']
-    except:
-        pass
-    return None
+            return {'success': True, 'data': response.json()}
+        elif response.status_code == 406:
+            return {'success': False, 'error': '406', 'message': 'API returned 406 - Try again later or reduce request size'}
+        elif response.status_code == 429:
+            return {'success': False, 'error': '429', 'message': 'Rate limit hit - Wait a few minutes'}
+        else:
+            return {'success': False, 'error': str(response.status_code), 'message': f'API Error {response.status_code}'}
+    
+    except requests.Timeout:
+        return {'success': False, 'error': 'timeout', 'message': 'Request timed out - Try again'}
+    except Exception as e:
+        return {'success': False, 'error': 'exception', 'message': str(e)}
 
 def display_event_card(event, score=None):
     """Display a concert event card"""
@@ -64,33 +66,38 @@ def display_event_card(event, score=None):
         col1, col2, col3 = st.columns([1, 3, 1])
         
         with col1:
-            if event['performers'] and event['performers'][0].get('image'):
+            if event.get('performers') and event['performers'][0].get('image'):
                 st.image(event['performers'][0]['image'], use_container_width=True)
         
         with col2:
-            st.markdown(f"### {event['title']}")
-            st.write(f"📍 {event['venue']['name']}")
-            st.write(f"📅 {event['datetime_local'][:10]}")
+            st.markdown(f"### {event.get('title', 'Unknown Event')}")
+            venue = event.get('venue', {})
+            st.write(f"📍 {venue.get('name', 'Unknown Venue')}")
+            datetime_local = event.get('datetime_local', '')
+            if datetime_local:
+                st.write(f"📅 {datetime_local[:10]}")
             if score:
                 st.progress(min(score, 100) / 100)
                 st.caption(f"{int(min(score, 100))}% match")
         
         with col3:
             if st.button("🎟️ Tickets", key=f"tickets_{unique_id}", use_container_width=True):
-                st.link_button("Open SeatGeek", event['url'], use_container_width=True, key=f"link_{unique_id}")
+                if event.get('url'):
+                    st.link_button("Open SeatGeek", event['url'], use_container_width=True, key=f"link_{unique_id}")
             
             if st.button("💾 Save", key=f"save_{unique_id}", use_container_width=True):
+                performers = event.get('performers', [])
                 concert_data = {
                     "user_id": user.id,
-                    "event_id": str(event['id']),
-                    "event_name": event['title'],
-                    "artist_name": event['performers'][0]['name'] if event['performers'] else "Unknown",
-                    "venue_name": event['venue']['name'],
-                    "city": event['venue']['city'],
-                    "state": event['venue']['state'],
-                    "date": event['datetime_local'][:10],
-                    "time": event['datetime_local'][11:19] if len(event['datetime_local']) > 10 else None,
-                    "url": event['url']
+                    "event_id": str(event.get('id')),
+                    "event_name": event.get('title', 'Unknown'),
+                    "artist_name": performers[0]['name'] if performers else "Unknown",
+                    "venue_name": venue.get('name', 'Unknown'),
+                    "city": venue.get('city', 'Unknown'),
+                    "state": venue.get('state', 'Unknown'),
+                    "date": datetime_local[:10] if datetime_local else None,
+                    "time": datetime_local[11:19] if len(datetime_local) > 10 else None,
+                    "url": event.get('url')
                 }
                 try:
                     supabase.table("concerts_discovered").upsert(concert_data, on_conflict='user_id,event_id').execute()
@@ -100,98 +107,92 @@ def display_event_card(event, score=None):
         
         st.markdown("---")
 
+def display_concert_from_db(concert, score=None):
+    """Display concert from database"""
+    with st.container():
+        col1, col2, col3 = st.columns([3, 2, 1])
+        
+        with col1:
+            st.markdown(f"### {concert.get('event_name', 'Unknown')}")
+            st.write(f"🎤 **{concert.get('artist_name', 'Unknown')}**")
+            st.write(f"📍 {concert.get('venue_name', 'Unknown')}, {concert.get('city', '')}, {concert.get('state', '')}")
+        
+        with col2:
+            st.write(f"📅 {concert.get('date', 'Unknown')}")
+            if concert.get('time'):
+                st.write(f"🕐 {concert['time']}")
+            if score is not None:
+                st.progress(min(score, 100) / 100)
+                st.caption(f"{int(min(score, 100))}% match")
+        
+        with col3:
+            url = concert.get('url') or concert.get('ticket_url')
+            if url:
+                st.link_button("🎟️ Tickets", url)
+        
+        st.markdown("---")
+
 # ==================== MAIN UI ====================
 st.title("✨ Music Discovery")
 st.markdown("Discover new concerts based on your music taste")
 
-# Tabs for different discovery modes
+# Tabs
 tab1, tab2, tab3, tab4 = st.tabs(["🎵 For You", "🔥 This Weekend", "🎲 Surprise Me", "🎯 Similar Artists"])
 
 # ==================== TAB 1: FOR YOU ====================
 with tab1:
     st.subheader("🎟️ Concerts You'll Love")
-    st.caption("Full concert events based on your music taste")
+    st.caption("From your saved concerts, ranked by your taste")
     
     liked_artists = get_user_liked_artists()
     
     if not liked_artists:
-        st.info("👆 Start swiping on artists to get personalized concert recommendations!")
+        st.info("👆 Start swiping on artists to get personalized recommendations!")
         if st.button("🎸 Go to Artist Swipe"):
             st.switch_page("pages/3_artist_swipe.py")
     else:
         st.success(f"Based on {len(liked_artists)} artists you like: **{', '.join(liked_artists[:3])}**{' and more...' if len(liked_artists) > 3 else ''}")
         
-        # Use concerts you've already saved instead of API
-        saved_concerts = supabase.table("concerts_discovered").select("*").eq("user_id", user.id).execute()
+        # Load saved concerts
+        saved = supabase.table("concerts_discovered").select("*").eq("user_id", user.id).execute()
         
-        if saved_concerts.data:
-            scored_events = []
-            liked_artists_lower = [a.lower() for a in liked_artists]
-            
-            for concert in saved_concerts.data:
-                score = 0
-                artist_name = concert.get('artist_name', '').lower()
-                
-                # High score if exact match
-                if artist_name in liked_artists_lower:
-                    score += 100
-                
-                # Partial match
-                for liked in liked_artists_lower:
-                    for word in liked.split():
-                        if len(word) > 3 and word in artist_name:
-                            score += 10
-                
-                if score > 0:
-                    scored_events.append({
-                        'concert': concert,
-                        'score': score
-                    })
-            
-            scored_events.sort(key=lambda x: x['score'], reverse=True)
-            
-            if scored_events:
-                st.success(f"🎉 Found {len(scored_events)} concerts from your saved list that match your taste!")
-                st.caption("These are concerts you've already discovered, sorted by relevance")
-                
-                for item in scored_events[:20]:
-                    concert = item['concert']
-                    score = min(item['score'], 100)
-                    
-                    # Display concert card from database
-                    with st.container():
-                        col1, col2, col3 = st.columns([3, 2, 1])
-                        
-                        with col1:
-                            st.markdown(f"### {concert['event_name']}")
-                            st.write(f"🎤 **{concert['artist_name']}**")
-                            st.write(f"📍 {concert['venue_name']}, {concert['city']}, {concert['state']}")
-                        
-                        with col2:
-                            st.write(f"📅 {concert['date']}")
-                            if concert.get('time'):
-                                st.write(f"🕐 {concert['time']}")
-                            st.progress(score / 100)
-                            st.caption(f"{int(score)}% match")
-                        
-                        with col3:
-                            if concert.get('url'):
-                                st.link_button("🎟️ Tickets", concert['url'])
-                        
-                        st.markdown("---")
-            else:
-                st.info("No matching concerts found in your saved list. Check 'This Weekend' or 'Similar Artists'!")
-        else:
-            st.info("You haven't saved any concerts yet! Go to 'Discover Concerts' first.")
+        if not saved.data:
+            st.info("No saved concerts yet! Go to Discover Concerts.")
             if st.button("🔍 Discover Concerts"):
                 st.switch_page("pages/2_discover_concerts.py")
+        else:
+            scored = []
+            liked_lower = [a.lower().strip() for a in liked_artists]
+            
+            for concert in saved.data:
+                score = 5  # Base score for all
+                artist = str(concert.get('artist_name', '')).lower().strip()
+                
+                if artist in liked_lower:
+                    score = 100
+                else:
+                    for liked in liked_lower:
+                        if liked in artist or artist in liked:
+                            score += 40
+                        for word in liked.split():
+                            if len(word) > 3 and word in artist:
+                                score += 10
+                
+                scored.append({'concert': concert, 'score': min(score, 100)})
+            
+            scored.sort(key=lambda x: x['score'], reverse=True)
+            
+            st.success(f"🎉 Showing all {len(scored)} concerts ranked by relevance!")
+            
+            for item in scored[:50]:
+                display_concert_from_db(item['concert'], item['score'])
 
 # ==================== TAB 2: THIS WEEKEND ====================
 with tab2:
     st.subheader("🔥 This Weekend in Austin")
     st.caption("Concerts happening Friday - Sunday")
     
-    if st.button("🔄 Refresh Weekend Events", key="refresh_weekend"):
+    if st.button("🔄 Refresh", key="refresh_weekend"):
         st.rerun()
     
     with st.spinner("Loading weekend concerts..."):
@@ -203,11 +204,6 @@ with tab2:
         friday = today + timedelta(days=days_until_friday)
         sunday = friday + timedelta(days=2)
         
-        url = "https://api.seatgeek.com/2/events"
-        headers = {
-            'Accept': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
         params = {
             "client_id": SEATGEEK_CLIENT_ID,
             "venue.city": "Austin",
@@ -215,208 +211,163 @@ with tab2:
             "taxonomies.name": "concert",
             "datetime_local.gte": friday.strftime("%Y-%m-%d"),
             "datetime_local.lte": sunday.strftime("%Y-%m-%d"),
-            "per_page": 50
+            "per_page": 20  # ✅ Reduced from 50
         }
         
-        try:
-            response = requests.get(url, params=params, headers=headers, timeout=10)
-            
-            if response.status_code == 200:
-                weekend_events = response.json().get('events', [])
-                
-                if weekend_events:
-                    st.success(f"Found {len(weekend_events)} concerts this weekend!")
-                    
-                    for event in weekend_events:
-                        display_event_card(event)
-                else:
-                    st.info("No concerts found this weekend. Check back later!")
-            
-            elif response.status_code == 406:
-                st.error("⚠️ API returned 406 error. Try refreshing the page.")
+        result = safe_seatgeek_request("https://api.seatgeek.com/2/events", params)
+        
+        if result['success']:
+            events = result['data'].get('events', [])
+            if events:
+                st.success(f"Found {len(events)} concerts this weekend!")
+                for event in events:
+                    display_event_card(event)
             else:
-                st.error(f"API Error: {response.status_code}")
+                st.info("No concerts this weekend.")
+        else:
+            st.error(f"⚠️ {result['message']}")
+            st.caption("Falling back to your saved concerts...")
+            
+            # Fallback to database
+            saved = supabase.table("concerts_discovered").select("*").eq("user_id", user.id).execute()
+            df = pd.DataFrame(saved.data) if saved.data else pd.DataFrame()
+            
+            if not df.empty:
+                friday_str = friday.strftime("%Y-%m-%d")
+                sunday_str = sunday.strftime("%Y-%m-%d")
+                weekend = df[(df['date'] >= friday_str) & (df['date'] <= sunday_str)]
                 
-        except Exception as e:
-            st.error(f"Error loading weekend events: {str(e)}")
+                if len(weekend) > 0:
+                    st.info(f"Showing {len(weekend)} from your saved concerts")
+                    for _, concert in weekend.iterrows():
+                        display_concert_from_db(concert.to_dict())
 
 # ==================== TAB 3: SURPRISE ME ====================
 with tab3:
     st.subheader("🎲 Surprise Me!")
-    st.caption("Discover something completely random")
+    st.caption("Discover something random")
     
     if st.button("🎲 Find a Random Concert", type="primary", use_container_width=True):
-        with st.spinner("Finding a surprise concert..."):
-            url = "https://api.seatgeek.com/2/events"
-            headers = {
-                'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
+        with st.spinner("Finding a surprise..."):
             params = {
                 "client_id": SEATGEEK_CLIENT_ID,
                 "venue.city": "Austin",
                 "venue.state": "TX",
                 "taxonomies.name": "concert",
-                "per_page": 25,
+                "per_page": 15,  # ✅ Reduced from 25
                 "sort": "score.desc"
             }
             
-            try:
-                response = requests.get(url, params=params, headers=headers, timeout=10)
-                if response.status_code == 200:
-                    events = response.json().get('events', [])
-                    if events:
-                        random_event = random.choice(events)
-                        st.success("🎉 Here's a concert you might enjoy:")
-                        display_event_card(random_event)
-                    else:
-                        st.info("No concerts found. Try again!")
+            result = safe_seatgeek_request("https://api.seatgeek.com/2/events", params, timeout=8)
+            
+            if result['success']:
+                events = result['data'].get('events', [])
+                if events:
+                    random_event = random.choice(events)
+                    st.success("🎉 Here's a concert you might enjoy:")
+                    display_event_card(random_event)
                 else:
-                    st.error(f"API Error: {response.status_code}")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+                    st.info("No concerts found.")
+            else:
+                st.error(f"⚠️ {result['message']}")
+                # Fallback
+                saved = supabase.table("concerts_discovered").select("*").eq("user_id", user.id).execute()
+                if saved.data:
+                    random_concert = random.choice(saved.data)
+                    st.info("Showing random from your saved concerts:")
+                    display_concert_from_db(random_concert)
 
 # ==================== TAB 4: SIMILAR ARTISTS ====================
 with tab4:
     st.subheader("🎯 Artists You Might Like")
-    st.caption("Based on artists you've already liked")
+    st.caption("New artists with Austin concerts")
     
     liked_artists = get_user_liked_artists()
     
     if not liked_artists:
-        st.info("👆 Like some artists first to get personalized recommendations!")
+        st.info("👆 Like some artists first!")
         if st.button("🎸 Go to Artist Swipe", key="swipe2"):
             st.switch_page("pages/3_artist_swipe.py")
     else:
-        st.write(f"Finding artists similar to: **{', '.join(liked_artists[:3])}**{' and more...' if len(liked_artists) > 3 else ''}")
+        st.write(f"Finding artists similar to: **{', '.join(liked_artists[:3])}**")
         
-        if st.button("✨ Get Personalized Recommendations", type="primary", use_container_width=True):
-            with st.spinner("Finding artists you'll love..."):
-                url = "https://api.seatgeek.com/2/events"
-                headers = {
-                    'Accept': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
+        if st.button("✨ Get Recommendations", type="primary", use_container_width=True):
+            with st.spinner("Finding new artists..."):
                 params = {
                     "client_id": SEATGEEK_CLIENT_ID,
                     "venue.city": "Austin",
                     "venue.state": "TX",
                     "taxonomies.name": "concert",
-                    "per_page": 50,
+                    "per_page": 25,  # ✅ Reduced from 50
                     "sort": "score.desc"
                 }
                 
-                try:
-                    response = requests.get(url, params=params, headers=headers, timeout=10)
-                    
-                    if response.status_code == 200:
-                        events = response.json().get('events', [])
-                        
-                        saved_concerts = supabase.table("concerts_discovered").select("artist_name").eq("user_id", user.id).execute()
-                        known_artists = set([c['artist_name'].lower() for c in saved_concerts.data if c.get('artist_name')])
-                        
-                        prefs = supabase.table("preferences").select("artist_name").eq("user_id", user.id).execute()
-                        rated_artists = set([p['artist_name'].lower() for p in prefs.data if p.get('artist_name')])
-                        
-                        new_artists = {}
-                        for event in events:
-                            for performer in event.get('performers', []):
-                                artist_name = performer.get('name')
-                                if artist_name:
-                                    artist_lower = artist_name.lower()
-                                    if artist_lower not in known_artists and artist_lower not in rated_artists:
-                                        if artist_name not in new_artists:
-                                            new_artists[artist_name] = {
-                                                'image': performer.get('image'),
-                                                'id': performer.get('id'),
-                                                'event_date': event.get('datetime_local', '')[:10],
-                                                'venue': event.get('venue', {}).get('name', 'Unknown'),
-                                                'event_id': event.get('id'),
-                                                'event_url': event.get('url')
-                                            }
-                        
-                        if new_artists:
-                            st.success(f"🎉 Found {len(new_artists)} NEW artists you haven't discovered yet!")
-                            st.caption("These are artists with Austin concerts that you haven't swiped on yet")
-                            
-                            cols = st.columns(3)
-                            for i, (name, data) in enumerate(list(new_artists.items())[:30]):
-                                with cols[i % 3]:
-                                    if data['image']:
-                                        st.image(data['image'], use_container_width=True)
-                                    else:
-                                        st.markdown("### 🎤")
-                                    st.markdown(f"**{name}**")
-                                    st.caption(f"📅 {data['event_date']}")
-                                    st.caption(f"📍 {data['venue']}")
-                                    
-                                    if st.button("➕ Add to Swipe", key=f"add_{data['id']}_{i}", use_container_width=True):
-                                        concert_data = {
-                                            "user_id": user.id,
-                                            "event_id": str(data['event_id']),
-                                            "event_name": name,
-                                            "artist_name": name,
-                                            "venue_name": data['venue'],
-                                            "city": "Austin",
-                                            "state": "TX",
-                                            "date": data['event_date'],
-                                            "url": data['event_url']
-                                        }
-                                        try:
-                                            supabase.table("concerts_discovered").upsert(concert_data, on_conflict='user_id,event_id').execute()
-                                            st.success(f"✅ Added {name}!")
-                                        except:
-                                            st.success(f"✅ Added {name}!")
-                                    
-                                    st.markdown("")
-                        else:
-                            st.info("🎊 You've already discovered all available artists!")
-                    
-                    elif response.status_code == 406:
-                        st.error("⚠️ API returned 406 error. Try refreshing.")
-                    else:
-                        st.error(f"API Error: {response.status_code}")
-                        
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
-    
-    if liked_artists:
-        st.markdown("---")
-        st.markdown("### 🔍 Quick Search")
-        
-        search_artist = st.text_input("Search for a specific artist:", placeholder="e.g. Taylor Swift", key="artist_search")
-        
-        if search_artist and st.button("Search", key="search_btn"):
-            with st.spinner(f"Searching for {search_artist}..."):
-                performer_id = search_seatgeek_performer(search_artist)
+                result = safe_seatgeek_request("https://api.seatgeek.com/2/events", params)
                 
-                if performer_id:
-                    url = "https://api.seatgeek.com/2/events"
-                    headers = {
-                        'Accept': 'application/json',
-                        'User-Agent': 'Mozilla/5.0'
-                    }
-                    params = {
-                        "client_id": SEATGEEK_CLIENT_ID,
-                        "performers.id": performer_id,
-                        "per_page": 10
-                    }
+                if result['success']:
+                    events = result['data'].get('events', [])
                     
-                    try:
-                        response = requests.get(url, params=params, headers=headers, timeout=10)
-                        if response.status_code == 200:
-                            events = response.json().get('events', [])
-                            
-                            if events:
-                                st.success(f"Found {len(events)} {search_artist} concerts!")
-                                for event in events[:5]:
-                                    display_event_card(event)
-                            else:
-                                st.info(f"No upcoming {search_artist} concerts found")
-                    except:
-                        st.error("Error fetching events")
+                    saved_concerts = supabase.table("concerts_discovered").select("artist_name").eq("user_id", user.id).execute()
+                    known_artists = set([c['artist_name'].lower() for c in saved_concerts.data if c.get('artist_name')])
+                    
+                    prefs = supabase.table("preferences").select("artist_name").eq("user_id", user.id).execute()
+                    rated_artists = set([p['artist_name'].lower() for p in prefs.data if p.get('artist_name')])
+                    
+                    new_artists = {}
+                    for event in events:
+                        for performer in event.get('performers', []):
+                            artist_name = performer.get('name')
+                            if artist_name:
+                                artist_lower = artist_name.lower()
+                                if artist_lower not in known_artists and artist_lower not in rated_artists:
+                                    if artist_name not in new_artists:
+                                        new_artists[artist_name] = {
+                                            'image': performer.get('image'),
+                                            'id': performer.get('id'),
+                                            'event_date': event.get('datetime_local', '')[:10],
+                                            'venue': event.get('venue', {}).get('name', 'Unknown'),
+                                            'event_id': event.get('id'),
+                                            'event_url': event.get('url')
+                                        }
+                    
+                    if new_artists:
+                        st.success(f"🎉 Found {len(new_artists)} NEW artists!")
+                        
+                        cols = st.columns(3)
+                        for i, (name, data) in enumerate(list(new_artists.items())[:30]):
+                            with cols[i % 3]:
+                                if data['image']:
+                                    st.image(data['image'], use_container_width=True)
+                                else:
+                                    st.markdown("### 🎤")
+                                st.markdown(f"**{name}**")
+                                st.caption(f"📅 {data['event_date']}")
+                                st.caption(f"📍 {data['venue']}")
+                                
+                                if st.button("➕ Add to Swipe", key=f"add_{data['id']}_{i}", use_container_width=True):
+                                    concert_data = {
+                                        "user_id": user.id,
+                                        "event_id": str(data['event_id']),
+                                        "event_name": name,
+                                        "artist_name": name,
+                                        "venue_name": data['venue'],
+                                        "city": "Austin",
+                                        "state": "TX",
+                                        "date": data['event_date'],
+                                        "url": data['event_url']
+                                    }
+                                    try:
+                                        supabase.table("concerts_discovered").upsert(concert_data, on_conflict='user_id,event_id').execute()
+                                        st.success(f"✅ Added {name}!")
+                                    except:
+                                        st.success(f"✅ Added!")
+                                
+                                st.markdown("")
+                    else:
+                        st.info("You've discovered all available artists!")
                 else:
-                    st.warning(f"Couldn't find '{search_artist}'")
+                    st.error(f"⚠️ {result['message']}")
+                    st.caption("The SeatGeek API is temporarily unavailable. Try again in a few minutes.")
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
