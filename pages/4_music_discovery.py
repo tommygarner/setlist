@@ -110,6 +110,9 @@ def get_weekend_events():
 
 def display_event_card(event, score=None):
     """Display a concert event card"""
+    import random
+    unique_id = f"{event['id']}_{random.randint(1000, 9999)}"  # Make truly unique
+    
     with st.container():
         col1, col2, col3 = st.columns([1, 3, 1])
         
@@ -122,14 +125,14 @@ def display_event_card(event, score=None):
             st.write(f"📍 {event['venue']['name']}")
             st.write(f"📅 {event['datetime_local'][:10]}")
             if score:
-                st.progress(score / 100)
-                st.caption(f"{int(score)}% match")
+                st.progress(min(score, 100) / 100)
+                st.caption(f"{int(min(score, 100))}% match")
         
         with col3:
-            if st.button("🎟️ View Tickets", key=f"tickets_{event['id']}", use_container_width=True):
-                st.link_button("Open SeatGeek", event['url'], use_container_width=True)
+            if st.button("🎟️ Tickets", key=f"tickets_{unique_id}", use_container_width=True):
+                st.link_button("Open SeatGeek", event['url'], use_container_width=True, key=f"link_{unique_id}")
             
-            if st.button("💾 Save", key=f"save_{event['id']}", use_container_width=True):
+            if st.button("💾 Save", key=f"save_{unique_id}", use_container_width=True):
                 # Save to concerts_discovered
                 concert_data = {
                     "user_id": user.id,
@@ -143,8 +146,11 @@ def display_event_card(event, score=None):
                     "time": event['datetime_local'][11:19] if len(event['datetime_local']) > 10 else None,
                     "url": event['url']
                 }
-                supabase.table("concerts_discovered").upsert(concert_data, on_conflict='user_id,event_id').execute()
-                st.success("✅ Saved to your concerts!")
+                try:
+                    supabase.table("concerts_discovered").upsert(concert_data, on_conflict='user_id,event_id').execute()
+                    st.success("✅ Saved!")
+                except:
+                    st.warning("Already saved!")
         
         st.markdown("---")
 
