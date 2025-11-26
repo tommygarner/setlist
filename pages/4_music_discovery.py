@@ -121,78 +121,70 @@ with tab1:
     else:
         st.success(f"Based on {len(liked_artists)} artists you like: **{', '.join(liked_artists[:3])}**{' and more...' if len(liked_artists) > 3 else ''}")
         
-        with st.spinner("Finding concerts you'll love..."):
-            url = "https://api.seatgeek.com/2/events"
-            headers = {
-                'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-            params = {
-                "client_id": SEATGEEK_CLIENT_ID,
-                "venue.city": "Austin",
-                "venue.state": "TX",
-                "taxonomies.name": "concert",
-                "per_page": 50,
-                "sort": "datetime_local.asc"
-            }
+        # Use concerts you've already saved instead of API
+        saved_concerts = supabase.table("concerts_discovered").select("*").eq("user_id", user.id).execute()
+        
+        if saved_concerts.data:
+            scored_events = []
+            liked_artists_lower = [a.lower() for a in liked_artists]
             
-            try:
-                response = requests.get(url, params=params, headers=headers, timeout=15)
+            for concert in saved_concerts.data:
+                score = 0
+                artist_name = concert.get('artist_name', '').lower()
                 
-                if response.status_code == 200:
-                    all_events = response.json().get('events', [])
-                    
-                    if not all_events:
-                        st.info("No concerts found in Austin right now. Check 'This Weekend' or 'Similar Artists'!")
-                    else:
-                        scored_events = []
-                        liked_artists_lower = [a.lower() for a in liked_artists]
-                        
-                        for event in all_events:
-                            score = 0
-                            event_artists = [p['name'].lower() for p in event.get('performers', []) if p.get('name')]
-                            
-                            for artist in liked_artists_lower:
-                                if artist in event_artists:
-                                    score += 100
-                            
-                            for artist in liked_artists_lower:
-                                for word in artist.split():
-                                    if len(word) > 3:
-                                        for event_artist in event_artists:
-                                            if word in event_artist:
-                                                score += 10
-                            
-                            score += event.get('score', 0) * 0.1
-                            
-                            if score > 0:
-                                scored_events.append({
-                                    'event': event,
-                                    'score': score
-                                })
-                        
-                        scored_events.sort(key=lambda x: x['score'], reverse=True)
-                        
-                        if scored_events:
-                            st.success(f"🎉 Found {len(scored_events)} concerts recommended for you!")
-                            st.caption("Showing concerts sorted by how well they match your taste")
-                            
-                            for item in scored_events[:15]:
-                                event = item['event']
-                                score = min(item['score'], 100)
-                                display_event_card(event, score)
-                        else:
-                            st.info("No matching concerts found. Try 'This Weekend' or 'Similar Artists'!")
+                # High score if exact match
+                if artist_name in liked_artists_lower:
+                    score += 100
                 
-                elif response.status_code == 406:
-                    st.error("⚠️ API returned 406 error. Try refreshing the page.")
-                else:
-                    st.error(f"API Error: {response.status_code}")
+                # Partial match
+                for liked in liked_artists_lower:
+                    for word in liked.split():
+                        if len(word) > 3 and word in artist_name:
+                            score += 10
+                
+                if score > 0:
+                    scored_events.append({
+                        'concert': concert,
+                        'score': score
+                    })
+            
+            scored_events.sort(key=lambda x: x['score'], reverse=True)
+            
+            if scored_events:
+                st.success(f"🎉 Found {len(scored_events)} concerts from your saved list that match your taste!")
+                st.caption("These are concerts you've already discovered, sorted by relevance")
+                
+                for item in scored_events[:20]:
+                    concert = item['concert']
+                    score = min(item['score'], 100)
                     
-            except requests.Timeout:
-                st.error("⏱️ Request timed out. Try again!")
-            except Exception as e:
-                st.error(f"Error: {str(e)}")
+                    # Display concert card from database
+                    with st.container():
+                        col1, col2, col3 = st.columns([3, 2, 1])
+                        
+                        with col1:
+                            st.markdown(f"### {concert['event_name']}")
+                            st.write(f"🎤 **{concert['artist_name']}**")
+                            st.write(f"📍 {concert['venue_name']}, {concert['city']}, {concert['state']}")
+                        
+                        with col2:
+                            st.write(f"📅 {concert['date']}")
+                            if concert.get('time'):
+                                st.write(f"🕐 {concert['time']}")
+                            st.progress(score / 100)
+                            st.caption(f"{int(score)}% match")
+                        
+                        with col3:
+                            if concert.get('url'):
+                                st.link_button("🎟️ Tickets", concert['url'])
+                        
+                        st.markdown("---")
+            else:
+                st.info("No matching concerts found in your saved list. Check 'This Weekend' or 'Similar Artists'!")
+        else:
+            st.info("You haven't saved any concerts yet! Go to 'Discover Concerts' first.")
+            if st.button("🔍 Discover Concerts"):
+                st.switch_page("pages/2_discover_concerts.py")
 
 # ==================== TAB 2: THIS WEEKEND ====================
 with tab2:
