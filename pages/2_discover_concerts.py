@@ -226,10 +226,22 @@ def parse_concert_data(event, artist_name, user_id):
         images = event.get('images', [])
         image_url = images[0]['url'] if images else None
         
+        # ✅ FIX: Validate artist_name - use event name as fallback
+        final_artist_name = artist_name
+        if not final_artist_name or final_artist_name.strip() == '' or final_artist_name == '****':
+            # Try to extract from event name
+            event_name = event.get('name', '')
+            if event_name:
+                # Use the event name as artist name if we don't have one
+                final_artist_name = event_name.split(' at ')[0] if ' at ' in event_name else event_name
+            else:
+                # Skip this concert if we can't determine the artist
+                return None
+        
         return {
             'user_id': user_id,
             'event_id': event.get('id'),
-            'artist_name': artist_name,
+            'artist_name': final_artist_name.strip(),  # ✅ Always strip whitespace
             'event_name': event.get('name', ''),
             'venue_name': venue.get('name', ''),
             'venue_address': venue.get('address', {}).get('line1', ''),
@@ -248,16 +260,34 @@ def parse_concert_data(event, artist_name, user_id):
         return None
 
 def parse_seatgeek_concert(event, user_id):
+    """Parse SeatGeek event data"""
     try:
-        performer = event.get('performers', [{}])[0]
+        performers = event.get('performers', [])
+        if not performers:
+            return None  # ✅ Skip events with no performers
+        
+        performer = performers[0]
         venue = event.get('venue', {})
         date_time = event.get('datetime_local', '')
         date, time_str = (date_time.split('T') + [''])[:2]
         stats = event.get('stats', {})
+        
+        # ✅ FIX: Validate artist name from performer
+        artist_name = performer.get('name', '').strip()
+        if not artist_name or artist_name == '****':
+            # Try getting from event title
+            event_title = event.get('title', '')
+            if event_title:
+                # Use event title as artist name
+                artist_name = event_title.split(' at ')[0] if ' at ' in event_title else event_title
+            else:
+                # Skip this concert if we can't determine the artist
+                return None
+        
         return {
             'user_id': user_id,
             'event_id': f"sg_{event['id']}",
-            'artist_name': performer.get('name', ''),
+            'artist_name': artist_name,  # ✅ Now validated and cleaned
             'event_name': event.get('title', ''),
             'venue_name': venue.get('name', ''),
             'venue_address': venue.get('address', ''),
@@ -274,6 +304,7 @@ def parse_seatgeek_concert(event, user_id):
         }
     except Exception:
         return None
+
 
 # Main Page
 st.title("🎤 Discover Concerts")
