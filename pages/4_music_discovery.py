@@ -157,41 +157,79 @@ tab1, tab2, tab3, tab4 = st.tabs(["🎵 For You", "🔥 This Weekend", "🎲 Sur
 
 # ==================== TAB 1: FOR YOU ====================
 with tab1:
-    st.subheader("Concerts Recommended For You")
-    st.caption("Based on artists you've liked")
+    st.subheader("🎟️ Concerts You'll Love")
+    st.caption("Full concert events based on your music taste")
     
     liked_artists = get_user_liked_artists()
     
     if not liked_artists:
-        st.info("👆 Start swiping on artists to get personalized recommendations!")
+        st.info("👆 Start swiping on artists to get personalized concert recommendations!")
         if st.button("🎸 Go to Artist Swipe"):
             st.switch_page("pages/3_artist_swipe.py")
     else:
-        st.success(f"Finding concerts based on {len(liked_artists)} artists you like...")
+        st.success(f"Based on {len(liked_artists)} artists you like: **{', '.join(liked_artists[:3])}**{' and more...' if len(liked_artists) > 3 else ''}")
         
-        with st.spinner("Searching for recommendations..."):
-            # Get SeatGeek performer IDs for liked artists
-            performer_ids = []
-            for artist in liked_artists[:10]:  # Use top 10 liked artists
-                performer_id = search_seatgeek_performer(artist)
-                if performer_id:
-                    performer_ids.append(performer_id)
+        with st.spinner("Finding concerts you'll love..."):
+            # Get all Austin concerts
+            url = "https://api.seatgeek.com/2/events"
+            params = {
+                "client_id": SEATGEEK_CLIENT_ID,
+                "venue.city": "Austin",
+                "venue.state": "TX",
+                "taxonomies.name": "concert",
+                "per_page": 100,
+                "sort": "datetime_local.asc"
+            }
             
-            if performer_ids:
-                recommendations = get_seatgeek_recommendations(performer_ids)
-                
-                if recommendations:
-                    st.success(f"Found {len(recommendations)} recommended concerts!")
+            try:
+                response = requests.get(url, params=params, timeout=10)
+                if response.status_code == 200:
+                    all_events = response.json().get('events', [])
                     
-                    for rec in recommendations:
-                        event = rec.get('event')
-                        score = rec.get('score', 50)
-                        if event:
+                    # Score events based on how well they match your taste
+                    scored_events = []
+                    for event in all_events:
+                        score = 0
+                        event_artists = [p['name'].lower() for p in event.get('performers', [])]
+                        
+                        # High score if you've liked this artist
+                        for artist in liked_artists:
+                            if artist.lower() in event_artists:
+                                score += 100
+                        
+                        # Medium score if artist name contains words from your liked artists
+                        for artist in liked_artists:
+                            for word in artist.lower().split():
+                                if len(word) > 3:  # Skip short words
+                                    for event_artist in event_artists:
+                                        if word in event_artist:
+                                            score += 10
+                        
+                        # Bonus for popularity
+                        score += event.get('score', 0) * 0.1
+                        
+                        if score > 0:
+                            scored_events.append({
+                                'event': event,
+                                'score': score
+                            })
+                    
+                    # Sort by score
+                    scored_events.sort(key=lambda x: x['score'], reverse=True)
+                    
+                    if scored_events:
+                        st.success(f"🎉 Found {len(scored_events)} concerts recommended for you!")
+                        st.caption("Showing concerts sorted by how well they match your taste")
+                        
+                        for item in scored_events[:15]:
+                            event = item['event']
+                            score = min(item['score'], 100)  # Cap at 100
                             display_event_card(event, score)
-                else:
-                    st.info("No recommendations found. Try liking more artists!")
-            else:
-                st.warning("Couldn't find SeatGeek data for your liked artists. Try searching for concerts manually!")
+                    else:
+                        st.info("No matching concerts found in Austin right now. Check 'This Weekend' or 'Artists You Might Like'!")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+
 
 # ==================== TAB 2: THIS WEEKEND ====================
 with tab2:
