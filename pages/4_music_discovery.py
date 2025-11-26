@@ -246,23 +246,90 @@ with tab3:
 
 # ==================== TAB 4: SIMILAR ARTISTS ====================
 with tab4:
-    st.subheader("🔍 Find Similar Artists")
-    st.caption("Search for an artist and discover concerts by similar performers")
+    st.subheader("🔍 Browse Artists by Genre")
+    st.caption("Discover artists with concerts in Austin")
     
-    search_artist = st.text_input("Enter an artist name:", placeholder="e.g. Ed Sheeran")
+    # Genre selector
+    genre = st.selectbox(
+        "Select a genre:",
+        ["All Genres", "rock", "pop", "country", "hip-hop", "electronic", "indie", "r-n-b", "latin", "alternative"]
+    )
     
-    if search_artist and st.button("Search", type="primary"):
-        with st.spinner(f"Finding artists similar to {search_artist}..."):
-            # First, find the artist's genre/type
+    if st.button("🔍 Find Artists", type="primary", use_container_width=True):
+        with st.spinner(f"Finding {genre} artists in Austin..."):
+            url = "https://api.seatgeek.com/2/events"
+            params = {
+                "client_id": SEATGEEK_CLIENT_ID,
+                "venue.city": "Austin",
+                "venue.state": "TX",
+                "per_page": 50,
+                "sort": "score.desc"
+            }
+            
+            if genre != "All Genres":
+                params["taxonomies.name"] = genre
+            
+            try:
+                response = requests.get(url, params=params, timeout=10)
+                if response.status_code == 200:
+                    events = response.json().get('events', [])
+                    
+                    # Extract unique artists
+                    artists_dict = {}
+                    for event in events:
+                        for performer in event.get('performers', []):
+                            artist_name = performer.get('name')
+                            if artist_name and artist_name not in artists_dict:
+                                artists_dict[artist_name] = {
+                                    'image': performer.get('image'),
+                                    'id': performer.get('id'),
+                                    'url': performer.get('url'),
+                                    'event_date': event.get('datetime_local', '')[:10]
+                                }
+                    
+                    if artists_dict:
+                        st.success(f"Found {len(artists_dict)} artists with concerts in Austin!")
+                        
+                        # Display in grid
+                        cols = st.columns(4)
+                        for i, (name, data) in enumerate(list(artists_dict.items())[:20]):
+                            with cols[i % 4]:
+                                if data['image']:
+                                    st.image(data['image'], use_container_width=True)
+                                else:
+                                    st.markdown("### 🎤")
+                                st.markdown(f"**{name}**")
+                                st.caption(f"Next show: {data['event_date']}")
+                                
+                                if st.button("🎟️ Details", key=f"details_{data['id']}_{i}", use_container_width=True):
+                                    if data['url']:
+                                        st.markdown(f"[View on SeatGeek]({data['url']})")
+                                
+                                st.markdown("")
+                    else:
+                        st.info(f"No {genre} artists found with concerts in Austin right now")
+                else:
+                    st.error(f"API Error: {response.status_code}")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+    
+    # Show example artists
+    st.markdown("---")
+    st.markdown("### 💡 Or Search for a Specific Artist:")
+    
+    search_artist = st.text_input("Artist name:", placeholder="e.g. Mt. Joy", key="artist_search")
+    
+    if search_artist and st.button("Search This Artist", key="search_specific"):
+        with st.spinner(f"Searching for {search_artist}..."):
             performer_id = search_seatgeek_performer(search_artist)
             
             if performer_id:
-                # Get events featuring this artist
+                # Get their events
                 url = "https://api.seatgeek.com/2/events"
                 params = {
                     "client_id": SEATGEEK_CLIENT_ID,
                     "performers.id": performer_id,
-                    "per_page": 1
+                    "per_page": 10
                 }
                 
                 try:
@@ -270,73 +337,16 @@ with tab4:
                     if response.status_code == 200:
                         events = response.json().get('events', [])
                         
-                        if events and events[0].get('taxonomies'):
-                            # Get the genre/taxonomy
-                            taxonomy = events[0]['taxonomies'][0]['name']
-                            
-                            # Now search for similar concerts in that genre
-                            similar_url = "https://api.seatgeek.com/2/events"
-                            similar_params = {
-                                "client_id": SEATGEEK_CLIENT_ID,
-                                "taxonomies.name": taxonomy,
-                                "venue.city": "Austin",
-                                "venue.state": "TX",
-                                "per_page": 15,
-                                "sort": "score.desc"
-                            }
-                            
-                            similar_response = requests.get(similar_url, params=similar_params, timeout=10)
-                            if similar_response.status_code == 200:
-                                similar_events = similar_response.json().get('events', [])
-                                
-                                # Extract unique artists
-                                similar_artists = {}
-                                for event in similar_events:
-                                    for performer in event.get('performers', []):
-                                        artist_name = performer.get('name')
-                                        if artist_name and artist_name.lower() != search_artist.lower():
-                                            if artist_name not in similar_artists:
-                                                similar_artists[artist_name] = {
-                                                    'image': performer.get('image'),
-                                                    'id': performer.get('id'),
-                                                    'event_count': 1
-                                                }
-                                            else:
-                                                similar_artists[artist_name]['event_count'] += 1
-                                
-                                if similar_artists:
-                                    st.success(f"Found {len(similar_artists)} similar artists in {taxonomy}!")
-                                    
-                                    # Display in grid
-                                    cols = st.columns(3)
-                                    for i, (name, data) in enumerate(list(similar_artists.items())[:12]):
-                                        with cols[i % 3]:
-                                            if data['image']:
-                                                st.image(data['image'], use_container_width=True)
-                                            st.markdown(f"**{name}**")
-                                            st.caption(f"{data['event_count']} event{'s' if data['event_count'] > 1 else ''} in Austin")
-                                            
-                                            if st.button("🔍 Find Shows", key=f"find_{data['id']}_{i}"):
-                                                st.info(f"Search for '{name}' in the Discover Concerts page!")
-                                            st.markdown("---")
-                                else:
-                                    st.info(f"No similar {taxonomy} artists found in Austin right now")
+                        if events:
+                            st.success(f"Found {len(events)} {search_artist} concerts!")
+                            for event in events:
+                                display_event_card(event)
                         else:
-                            st.warning("Couldn't determine artist genre. Try a different artist!")
-                except Exception as e:
-                    st.error(f"Error: {str(e)}")
+                            st.info(f"No upcoming {search_artist} concerts found")
+                except:
+                    st.error("Error fetching events")
             else:
-                st.warning(f"Couldn't find '{search_artist}' on SeatGeek. Try a different spelling!")
-    
-    # Show popular artists as suggestions
-    if not search_artist:
-        st.markdown("### 💡 Try searching for:")
-        suggestions = ["Taylor Swift", "Billie Eilish", "The Weeknd", "Drake", "Ed Sheeran", "Bad Bunny"]
-        cols = st.columns(3)
-        for i, artist in enumerate(suggestions):
-            with cols[i % 3]:
-                if st.button(f"🎤 {artist}", key=f"suggest_{i}", use_container_width=True):
-                    st.rerun()
+                st.warning(f"Couldn't find '{search_artist}' - try browsing by genre instead!")
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
