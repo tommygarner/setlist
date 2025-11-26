@@ -434,7 +434,6 @@ st.markdown("---")
 st.markdown("### What do you think?")
 
 # Main swipe buttons
-# Main swipe buttons
 col1, col2, col3 = st.columns([1, 1, 1])
 
 with col1:
@@ -469,7 +468,7 @@ with col2:
                 st.session_state.current_idx -= 1
 
                 supabase.table("preferences").delete().eq("user_id", user.id).eq("artist_name", last_artist).execute()
-		st.session_state.scroll_to_top = True
+                st.session_state.scroll_to_top = True
                 st.rerun()
 
 with col3:
