@@ -40,6 +40,13 @@ def search_user(search_term):
 def send_friend_request(user_id, friend_id):
     """Send friend request or auto-accept if mutual"""
     try:
+        # Validate inputs
+        if not user_id or not friend_id:
+            return {'success': False, 'message': 'Invalid user IDs'}
+        
+        if user_id == friend_id:
+            return {'success': False, 'message': 'Cannot friend yourself'}
+        
         # Check if the OTHER person already sent you a request
         existing_request = supabase.table("friendships").select("*").eq("user_id", friend_id).eq("friend_id", user_id).eq("status", "pending").execute()
         
@@ -57,7 +64,7 @@ def send_friend_request(user_id, friend_id):
                 "status": "accepted"
             }).execute()
             
-            return {'success': True, 'message': '✅ You are now friends! (Mutual request accepted)'}
+            return {'success': True, 'message': '✅ You are now friends! (Mutual request accepted)', 'type': 'mutual'}
         
         # Check if friendship already exists
         existing = supabase.table("friendships").select("*").or_(
@@ -67,20 +74,26 @@ def send_friend_request(user_id, friend_id):
         if existing.data:
             status = existing.data[0]['status']
             if status == 'accepted':
-                return {'success': False, 'message': 'You are already friends'}
+                return {'success': False, 'message': 'You are already friends', 'type': 'duplicate'}
             else:
-                return {'success': False, 'message': 'Friend request already sent'}
+                return {'success': False, 'message': 'Friend request already sent', 'type': 'duplicate'}
         
         # Create new friend request
-        supabase.table("friendships").insert({
-            "user_id": user_id,
-            "friend_id": friend_id,
+        insert_result = supabase.table("friendships").insert({
+            "user_id": str(user_id),
+            "friend_id": str(friend_id),
             "status": "pending"
         }).execute()
         
-        return {'success': True, 'message': 'Friend request sent! They can accept in their Requests tab.'}
+        # Check if insert succeeded
+        if insert_result.data:
+            return {'success': True, 'message': '✨ Friend request sent! They can accept in their Requests tab.', 'type': 'sent', 'data': insert_result.data}
+        else:
+            return {'success': False, 'message': 'Failed to send request - no data returned', 'type': 'error'}
+        
     except Exception as e:
-        return {'success': False, 'message': str(e)}
+        return {'success': False, 'message': f'Error: {str(e)}', 'type': 'exception'}
+
 
 def get_friends(user_id):
     """Get accepted friends"""
@@ -210,7 +223,23 @@ with tab1:
                 if found_users:
                     st.success(f"Found {len(found_users)} user(s)")
                     
-                    for found_user in found_users[:5]:  # Show max 5 results
+                    for found_user in found_users[:5]:
+                        # Check if already friends or requested
+                        existing = supabase.table("friendships").select("*").or_(
+                            f"and(user_id.eq.{user.id},friend_id.eq.{found_user['id']}),and(user_id.eq.{found_user['id']},friend_id.eq.{user.id})"
+                        ).execute()
+                        
+                        # Determine relationship status
+                        if existing.data:
+                            if existing.data[0]['status'] == 'accepted':
+                                relationship = "friends"
+                            elif existing.data[0]['user_id'] == user.id:
+                                relationship = "requested"
+                            else:
+                                relationship = "pending"
+                        else:
+                            relationship = "none"
+                        
                         with st.container():
                             col1, col2 = st.columns([3, 1])
                             
@@ -226,19 +255,46 @@ with tab1:
                                     st.caption(f"🎵 {int(compat)}% music match • {len(shared)} shared artists")
                             
                             with col2:
-                                if st.button("➕ Add Friend", key=f"add_{found_user['id']}", use_container_width=True):
-                                    result = send_friend_request(user.id, found_user['id'])
-                                    if result['success']:
-                                        st.success(result['message'])
-                                        st.rerun()
-                                    else:
-                                        st.error(result['message'])
+                                # Dynamic button based on relationship
+                                if relationship == "friends":
+                                    st.button("✅ Friends", key=f"status_{found_user['id']}", disabled=True, use_container_width=True)
+                                
+                                elif relationship == "requested":
+                                    st.button("⏳ Requested", key=f"status_{found_user['id']}", disabled=True, use_container_width=True)
+                                
+                                elif relationship == "pending":
+                                    st.button("📬 Accept in Requests", key=f"status_{found_user['id']}", disabled=True, use_container_width=True)
+                                
+                                else:
+                                    # Show Add Friend button
+                                    button_key = f"add_{found_user['id']}"
+                                    
+                                    if st.button("➕ Add Friend", key=button_key, use_container_width=True, type="primary"):
+                                        with st.spinner("Sending friend request..."):
+                                            result = send_friend_request(user.id, found_user['id'])
+                                            
+                                            # Debug output (temporary)
+                                            st.write(f"**Debug Info:**")
+                                            st.json(result)
+                                            
+                                            if result['success']:
+                                                st.success(result['message'])
+                                                st.balloons()
+                                                
+                                                # Force refresh to update button state
+                                                import time
+                                                time.sleep(1)
+                                                st.rerun()
+                                            else:
+                                                st.error(f"❌ {result['message']}")
+                                                st.caption("Check the debug info above for details")
                             
                             st.markdown("---")
                 else:
                     st.error("No users found. Try a different search term.")
         else:
             st.warning("Please enter a username or email")
+
 
 # ==================== TAB 2: MY FRIENDS ====================
 with tab2:
