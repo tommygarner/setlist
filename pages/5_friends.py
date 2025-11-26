@@ -295,8 +295,8 @@ with tab1:
                                 result = send_friend_request(user.id, found_user['id'])
                                 
                                 # Show result with debug
-                                st.write("**Result:**")
-                                st.json(result)
+                                # st.write("**Result:**")
+                                # st.json(result)
                                 
                                 if result['success']:
                                     st.success(result['message'])
