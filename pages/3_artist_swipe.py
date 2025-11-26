@@ -426,6 +426,12 @@ with col1:
         st.session_state.current_idx += 1
         save_preference(user.id, artist, 'disliked')
         st.session_state.scroll_to_top = True
+        st.markdown("""
+            <script>
+                window.scrollTo(0, 0);
+                window.parent.document.querySelector('section.main').scrollTo(0, 0);
+            </script>
+        """, unsafe_allow_html=True)
         st.rerun()
 
 with col2:
@@ -447,6 +453,12 @@ with col2:
 
                 supabase.table("preferences").delete().eq("user_id", user.id).eq("artist_name", last_artist).execute()
                 st.session_state.scroll_to_top = True
+                st.markdown("""
+                    <script>
+                        window.scrollTo(0, 0);
+                        window.parent.document.querySelector('section.main').scrollTo(0, 0);
+                    </script>
+                """, unsafe_allow_html=True)
                 st.rerun()
 
 with col3:
@@ -460,9 +472,16 @@ with col3:
         st.session_state.current_idx += 1
         save_preference(user.id, artist, 'liked')
         st.session_state.scroll_to_top = True
+        st.markdown("""
+            <script>
+                window.scrollTo(0, 0);
+                window.parent.document.querySelector('section.main').scrollTo(0, 0);
+            </script>
+        """, unsafe_allow_html=True)
         st.rerun()
 
 st.caption(f"Concert {st.session_state.current_idx + 1} of {total_artists}")
+
 
 with st.sidebar:
     st.markdown("### 📊 Your Stats")
