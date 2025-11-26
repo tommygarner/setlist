@@ -38,24 +38,47 @@ def search_user(search_term):
     return response.data
 
 def send_friend_request(user_id, friend_id):
-    """Send friend request"""
+    """Send friend request or auto-accept if mutual"""
     try:
+        # Check if the OTHER person already sent you a request
+        existing_request = supabase.table("friendships").select("*").eq("user_id", friend_id).eq("friend_id", user_id).eq("status", "pending").execute()
+        
+        if existing_request.data:
+            # They already requested you! Auto-accept both ways
+            request_id = existing_request.data[0]['id']
+            
+            # Accept their request
+            supabase.table("friendships").update({"status": "accepted"}).eq("id", request_id).execute()
+            
+            # Create your accepted friendship
+            supabase.table("friendships").insert({
+                "user_id": user_id,
+                "friend_id": friend_id,
+                "status": "accepted"
+            }).execute()
+            
+            return {'success': True, 'message': '✅ You are now friends! (Mutual request accepted)'}
+        
         # Check if friendship already exists
         existing = supabase.table("friendships").select("*").or_(
             f"and(user_id.eq.{user_id},friend_id.eq.{friend_id}),and(user_id.eq.{friend_id},friend_id.eq.{user_id})"
         ).execute()
         
         if existing.data:
-            return {'success': False, 'message': 'Friend request already exists or you are already friends'}
+            status = existing.data[0]['status']
+            if status == 'accepted':
+                return {'success': False, 'message': 'You are already friends'}
+            else:
+                return {'success': False, 'message': 'Friend request already sent'}
         
-        # Create friend request
+        # Create new friend request
         supabase.table("friendships").insert({
             "user_id": user_id,
             "friend_id": friend_id,
             "status": "pending"
         }).execute()
         
-        return {'success': True, 'message': 'Friend request sent!'}
+        return {'success': True, 'message': 'Friend request sent! They can accept in their Requests tab.'}
     except Exception as e:
         return {'success': False, 'message': str(e)}
 
@@ -251,6 +274,29 @@ with tab3:
     st.subheader("📬 Friend Requests")
     
     pending = get_pending_requests(user.id)
+    
+    # Add auto-accept mutual requests button
+    if pending:
+        if st.button("✨ Auto-Accept Mutual Requests", type="primary"):
+            accepted_count = 0
+            for request in pending:
+                requester = request['requester']
+                
+                # Check if you also sent them a request
+                mutual = supabase.table("friendships").select("*").eq("user_id", user.id).eq("friend_id", requester['id']).eq("status", "pending").execute()
+                
+                if mutual.data:
+                    # Accept their request
+                    supabase.table("friendships").update({"status": "accepted"}).eq("id", request['id']).execute()
+                    # Accept your request
+                    supabase.table("friendships").update({"status": "accepted"}).eq("id", mutual.data[0]['id']).execute()
+                    accepted_count += 1
+            
+            if accepted_count > 0:
+                st.success(f"✅ Accepted {accepted_count} mutual request(s)!")
+                st.rerun()
+            else:
+                st.info("No mutual requests found")
     
     if pending:
         st.info(f"You have {len(pending)} pending request(s)")
