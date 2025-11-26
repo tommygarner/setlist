@@ -142,7 +142,7 @@ tab1, tab2, tab3, tab4 = st.tabs(["🎵 For You", "🔥 This Weekend", "🎲 Sur
 # ==================== TAB 1: FOR YOU ====================
 with tab1:
     st.subheader("🎟️ Concerts You'll Love")
-    st.caption("From your saved concerts, ranked by your taste")
+    st.caption("Fresh concert recommendations from SeatGeek based on your taste")
     
     liked_artists = get_user_liked_artists()
     
@@ -153,39 +153,91 @@ with tab1:
     else:
         st.success(f"Based on {len(liked_artists)} artists you like: **{', '.join(liked_artists[:3])}**{' and more...' if len(liked_artists) > 3 else ''}")
         
-        # Load saved concerts
-        saved = supabase.table("concerts_discovered").select("*").eq("user_id", user.id).execute()
-        
-        if not saved.data:
-            st.info("No saved concerts yet! Go to Discover Concerts.")
-            if st.button("🔍 Discover Concerts"):
-                st.switch_page("pages/2_discover_concerts.py")
-        else:
-            scored = []
-            liked_lower = [a.lower().strip() for a in liked_artists]
+        with st.spinner("Searching SeatGeek for concerts you'll love..."):
+            # Get fresh concerts from API
+            params = {
+                "client_id": SEATGEEK_CLIENT_ID,
+                "venue.city": "Austin",
+                "venue.state": "TX",
+                "taxonomies.name": "concert",
+                "per_page": 25,  # Conservative
+                "sort": "datetime_local.asc"
+            }
             
-            for concert in saved.data:
-                score = 5  # Base score for all
-                artist = str(concert.get('artist_name', '')).lower().strip()
+            result = safe_seatgeek_request("https://api.seatgeek.com/2/events", params, timeout=12)
+            
+            if result['success']:
+                all_events = result['data'].get('events', [])
                 
-                if artist in liked_lower:
-                    score = 100
+                if not all_events:
+                    st.info("No concerts found in Austin right now.")
                 else:
-                    for liked in liked_lower:
-                        if liked in artist or artist in liked:
-                            score += 40
-                        for word in liked.split():
-                            if len(word) > 3 and word in artist:
-                                score += 10
+                    # Score events based on your liked artists
+                    scored_events = []
+                    liked_artists_lower = [a.lower().strip() for a in liked_artists]
+                    
+                    for event in all_events:
+                        score = 0
+                        performers = event.get('performers', [])
+                        event_artists = [p['name'].lower() for p in performers if p.get('name')]
+                        
+                        # Perfect match = 100 points
+                        for artist in liked_artists_lower:
+                            if artist in event_artists:
+                                score += 100
+                                break
+                        
+                        # Partial match
+                        if score < 100:
+                            for artist in liked_artists_lower:
+                                for event_artist in event_artists:
+                                    if artist in event_artist or event_artist in artist:
+                                        score += 50
+                                        break
+                        
+                        # Word matches
+                        if score < 100:
+                            for artist in liked_artists_lower:
+                                words = artist.split()
+                                for word in words:
+                                    if len(word) > 3:
+                                        for event_artist in event_artists:
+                                            if word in event_artist:
+                                                score += 10
+                        
+                        # Popularity bonus
+                        score += event.get('score', 0) * 0.1
+                        
+                        if score > 0:
+                            scored_events.append({
+                                'event': event,
+                                'score': min(score, 100)
+                            })
+                    
+                    scored_events.sort(key=lambda x: x['score'], reverse=True)
+                    
+                    if scored_events:
+                        st.success(f"🎉 Found {len(scored_events)} concerts that match your taste!")
+                        st.caption("💯 = Artists you've liked, lower scores = similar vibes")
+                        
+                        for item in scored_events[:20]:
+                            display_event_card(item['event'], item['score'])
+                    else:
+                        st.info("No matching concerts found. Try 'This Weekend' or 'Similar Artists'!")
+            else:
+                st.error(f"⚠️ {result['message']}")
+                st.caption("SeatGeek API is temporarily unavailable. Try again in a few minutes, or check other tabs.")
                 
-                scored.append({'concert': concert, 'score': min(score, 100)})
-            
-            scored.sort(key=lambda x: x['score'], reverse=True)
-            
-            st.success(f"🎉 Showing all {len(scored)} concerts ranked by relevance!")
-            
-            for item in scored[:50]:
-                display_concert_from_db(item['concert'], item['score'])
+                # Show helpful fallback message
+                st.info("💡 While waiting, you can:")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔥 Check This Weekend"):
+                        st.switch_page("pages/4_music_discovery.py")
+                with col2:
+                    if st.button("🎯 Browse New Artists"):
+                        st.switch_page("pages/4_music_discovery.py")
+
 
 # ==================== TAB 2: THIS WEEKEND ====================
 with tab2:
