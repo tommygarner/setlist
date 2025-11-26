@@ -211,89 +211,108 @@ with tab1:
     st.subheader("🔍 Find Friends")
     st.caption("Search by username or email")
     
-    search_term = st.text_input("Search:", placeholder="e.g. johndoe or john@example.com")
+    # Initialize session state for search results
+    if 'search_results' not in st.session_state:
+        st.session_state.search_results = []
+    if 'last_search' not in st.session_state:
+        st.session_state.last_search = ""
     
-    if st.button("Search", type="primary"):
-        if search_term:
-            if search_term.lower() == current_username.lower() or search_term.lower() == user.email.lower():
-                st.warning("That's you! 😄")
-            else:
-                found_users = search_user(search_term)
-                
-                if found_users:
-                    st.success(f"Found {len(found_users)} user(s)")
-                    
-                    for found_user in found_users[:5]:
-                        # Check if already friends or requested
-                        existing = supabase.table("friendships").select("*").or_(
-                            f"and(user_id.eq.{user.id},friend_id.eq.{found_user['id']}),and(user_id.eq.{found_user['id']},friend_id.eq.{user.id})"
-                        ).execute()
-                        
-                        # Determine relationship status
-                        if existing.data:
-                            if existing.data[0]['status'] == 'accepted':
-                                relationship = "friends"
-                            elif existing.data[0]['user_id'] == user.id:
-                                relationship = "requested"
-                            else:
-                                relationship = "pending"
-                        else:
-                            relationship = "none"
-                        
-                        with st.container():
-                            col1, col2 = st.columns([3, 1])
-                            
-                            with col1:
-                                st.markdown(f"### {found_user['username']}")
-                                st.caption(f"📧 {found_user['email']}")
-                                
-                                # Calculate compatibility
-                                compat, shared, _, _ = calculate_compatibility(user.id, found_user['id'])
-                                
-                                if compat > 0:
-                                    st.progress(compat / 100)
-                                    st.caption(f"🎵 {int(compat)}% music match • {len(shared)} shared artists")
-                            
-                            with col2:
-                                # Dynamic button based on relationship
-                                if relationship == "friends":
-                                    st.button("✅ Friends", key=f"status_{found_user['id']}", disabled=True, use_container_width=True)
-                                
-                                elif relationship == "requested":
-                                    st.button("⏳ Requested", key=f"status_{found_user['id']}", disabled=True, use_container_width=True)
-                                
-                                elif relationship == "pending":
-                                    st.button("📬 Accept in Requests", key=f"status_{found_user['id']}", disabled=True, use_container_width=True)
-                                
-                                else:
-                                    # Show Add Friend button
-                                    button_key = f"add_{found_user['id']}"
-                                    
-                                    if st.button("➕ Add Friend", key=button_key, use_container_width=True, type="primary"):
-                                        with st.spinner("Sending friend request..."):
-                                            result = send_friend_request(user.id, found_user['id'])
-                                            
-                                            # Debug output (temporary)
-                                            st.write(f"**Debug Info:**")
-                                            st.json(result)
-                                            
-                                            if result['success']:
-                                                st.success(result['message'])
-                                                st.balloons()
-                                                
-                                                # Force refresh to update button state
-                                                import time
-                                                time.sleep(1)
-                                                st.rerun()
-                                            else:
-                                                st.error(f"❌ {result['message']}")
-                                                st.caption("Check the debug info above for details")
-                            
-                            st.markdown("---")
+    search_term = st.text_input("Search:", placeholder="e.g. johndoe or john@example.com", value=st.session_state.last_search)
+    
+    col_search, col_clear = st.columns([3, 1])
+    
+    with col_search:
+        if st.button("🔍 Search", type="primary", use_container_width=True):
+            if search_term:
+                if search_term.lower() == current_username.lower() or search_term.lower() == user.email.lower():
+                    st.warning("That's you! 😄")
+                    st.session_state.search_results = []
                 else:
-                    st.error("No users found. Try a different search term.")
-        else:
-            st.warning("Please enter a username or email")
+                    found_users = search_user(search_term)
+                    st.session_state.search_results = found_users
+                    st.session_state.last_search = search_term
+            else:
+                st.warning("Please enter a username or email")
+    
+    with col_clear:
+        if st.button("🗑️ Clear", use_container_width=True):
+            st.session_state.search_results = []
+            st.session_state.last_search = ""
+            st.rerun()
+    
+    # Display search results from session state
+    if st.session_state.search_results:
+        st.success(f"Found {len(st.session_state.search_results)} user(s)")
+        
+        for found_user in st.session_state.search_results[:5]:
+            # Check current relationship status
+            existing = supabase.table("friendships").select("*").or_(
+                f"and(user_id.eq.{user.id},friend_id.eq.{found_user['id']}),and(user_id.eq.{found_user['id']},friend_id.eq.{user.id})"
+            ).execute()
+            
+            # Determine relationship
+            relationship = "none"
+            if existing.data:
+                for rel in existing.data:
+                    if rel['status'] == 'accepted':
+                        relationship = "friends"
+                        break
+                    elif rel['user_id'] == user.id:
+                        relationship = "requested"
+                    else:
+                        relationship = "pending"
+            
+            with st.container():
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    st.markdown(f"### {found_user['username']}")
+                    st.caption(f"📧 {found_user['email']}")
+                    
+                    # Calculate compatibility
+                    compat, shared, _, _ = calculate_compatibility(user.id, found_user['id'])
+                    
+                    if compat > 0:
+                        st.progress(compat / 100)
+                        st.caption(f"🎵 {int(compat)}% music match • {len(shared)} shared artists")
+                
+                with col2:
+                    # Dynamic button based on relationship
+                    if relationship == "friends":
+                        st.button("✅ Friends", key=f"btn_{found_user['id']}", disabled=True, use_container_width=True)
+                    
+                    elif relationship == "requested":
+                        st.button("⏳ Requested", key=f"btn_{found_user['id']}", disabled=True, use_container_width=True)
+                    
+                    elif relationship == "pending":
+                        if st.button("📬 View Request", key=f"btn_{found_user['id']}", use_container_width=True):
+                            st.info("Go to the 'Requests' tab to accept!")
+                    
+                    else:
+                        # Show Add Friend button
+                        if st.button("➕ Add Friend", key=f"btn_{found_user['id']}", use_container_width=True, type="primary"):
+                            with st.spinner("Sending friend request..."):
+                                result = send_friend_request(user.id, found_user['id'])
+                                
+                                # Show result with debug
+                                st.write("**Result:**")
+                                st.json(result)
+                                
+                                if result['success']:
+                                    st.success(result['message'])
+                                    st.balloons()
+                                    
+                                    # Wait a moment then refresh
+                                    import time
+                                    time.sleep(1.5)
+                                    st.rerun()
+                                else:
+                                    st.error(f"Error: {result['message']}")
+                
+                st.markdown("---")
+    
+    elif st.session_state.last_search:
+        st.info("No users found. Try a different search term.")
 
 
 # ==================== TAB 2: MY FRIENDS ====================
