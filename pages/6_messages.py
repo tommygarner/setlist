@@ -216,13 +216,53 @@ with col_chat:
             user_concerts = get_user_concerts()
             
             if user_concerts:
-                # Show concert selector
-                concert_options = {}
-                for concert in user_concerts[:20]:
-                    label = f"{concert['artist_name']} - {concert['venue_name']} ({concert['date']})"
-                    concert_options[label] = concert
+                # Organize concerts by status
+                going_concerts = []
+                interested_concerts = []
+                other_concerts = []
                 
-                selected_label = st.selectbox("Choose a concert:", list(concert_options.keys()))
+                for concert in user_concerts:
+                    # Check status
+                    status_check = supabase.table("concert_attendance").select("status").eq("user_id", user.id).eq("event_id", concert['event_id']).execute()
+                    
+                    if status_check.data:
+                        status = status_check.data[0]['status']
+                        if status == 'going':
+                            going_concerts.append(concert)
+                        elif status == 'interested':
+                            interested_concerts.append(concert)
+                        else:
+                            other_concerts.append(concert)
+                    else:
+                        other_concerts.append(concert)
+                
+                # Build organized dropdown options
+                concert_options = {}
+                
+                # Add Going concerts first
+                if going_concerts:
+                    for concert in going_concerts[:10]:
+                        label = f"✅ Going: {concert['artist_name']} - {concert['venue_name']} ({concert['date']})"
+                        concert_options[label] = concert
+                
+                # Add Interested concerts
+                if interested_concerts:
+                    for concert in interested_concerts[:10]:
+                        label = f"⭐ Interested: {concert['artist_name']} - {concert['venue_name']} ({concert['date']})"
+                        concert_options[label] = concert
+                
+                # Add other concerts
+                if other_concerts:
+                    for concert in other_concerts[:15]:
+                        label = f"📋 {concert['artist_name']} - {concert['venue_name']} ({concert['date']})"
+                        concert_options[label] = concert
+                
+                # Concert selector dropdown
+                selected_label = st.selectbox(
+                    "Choose a concert:", 
+                    list(concert_options.keys()),
+                    help="✅ = Going, ⭐ = Interested, 📋 = Saved"
+                )
                 
                 col_preview, col_send_concert = st.columns([3, 1])
                 
@@ -244,10 +284,19 @@ with col_chat:
                             st.rerun()
                         else:
                             st.error("Failed to share concert")
+                
+                # Quick link to My Concerts
+                st.caption("💡 Tip: Mark concerts as Going/Interested in [My Concerts](/my_concerts) for easy sharing")
+                
             else:
                 st.info("You haven't saved any concerts yet. Go to Discover Concerts first!")
-                if st.button("🔍 Discover Concerts"):
-                    st.switch_page("pages/2_discover_concerts.py")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔍 Discover Concerts", use_container_width=True):
+                        st.switch_page("pages/2_discover_concerts.py")
+                with col2:
+                    if st.button("🎟️ My Concerts", use_container_width=True):
+                        st.switch_page("pages/7_my_concerts.py")
         
         st.markdown("---")
         
