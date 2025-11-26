@@ -1,7 +1,7 @@
 import streamlit as st
 from supabase import create_client, Client
 from datetime import datetime
-import time
+import json
 
 st.set_page_config(page_title="Messages", page_icon="💬", layout="wide")
 
@@ -47,15 +47,21 @@ def get_conversation(user1_id, user2_id, limit=50):
     
     return messages.data
 
-def send_message(sender_id, receiver_id, message_text):
-    """Send a message"""
+def send_message(sender_id, receiver_id, message_text, concert_data=None):
+    """Send a message with optional concert attachment"""
     try:
-        result = supabase.table("messages").insert({
+        data = {
             "sender_id": sender_id,
             "receiver_id": receiver_id,
             "message": message_text,
             "read": False
-        }).execute()
+        }
+        
+        if concert_data:
+            data["concert_event_id"] = concert_data.get('event_id')
+            data["concert_data"] = concert_data
+        
+        result = supabase.table("messages").insert(data).execute()
         
         return {'success': True, 'data': result.data}
     except Exception as e:
@@ -83,6 +89,39 @@ def get_last_message(user1_id, user2_id):
         return result.data[0]
     return None
 
+def get_user_concerts():
+    """Get user's saved concerts"""
+    result = supabase.table("concerts_discovered").select("*").eq("user_id", user.id).order("date").execute()
+    return result.data
+
+def display_concert_card(concert_data, in_chat=False):
+    """Display concert card in message"""
+    artist = concert_data.get('artist_name', 'Unknown Artist')
+    event = concert_data.get('event_name', 'Concert')
+    venue = concert_data.get('venue_name', 'Unknown Venue')
+    city = concert_data.get('city', '')
+    state = concert_data.get('state', '')
+    date = concert_data.get('date', 'TBA')
+    url = concert_data.get('url') or concert_data.get('ticket_url')
+    
+    st.markdown(f"""
+    <div style="
+        background: linear-gradient(135deg, #1DB95422 0%, #1DB95444 100%);
+        border-left: 4px solid #1DB954;
+        padding: 15px;
+        border-radius: 10px;
+        margin: 10px 0;
+    ">
+        <h4 style="margin: 0; color: #1DB954;">🎤 {artist}</h4>
+        <p style="margin: 5px 0; font-weight: bold;">{event}</p>
+        <p style="margin: 5px 0; font-size: 0.9em;">📍 {venue}, {city}, {state}</p>
+        <p style="margin: 5px 0; font-size: 0.9em;">📅 {date}</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if url and in_chat:
+        st.link_button("🎟️ Get Tickets", url, use_container_width=True)
+
 # ==================== MAIN UI ====================
 st.title("💬 Messages")
 st.markdown("Chat with your concert buddies")
@@ -96,18 +135,19 @@ if not friends:
         st.switch_page("pages/5_friends.py")
     st.stop()
 
-# Session state for selected friend
+# Session state
 if 'selected_friend' not in st.session_state:
     st.session_state.selected_friend = None
+if 'show_concert_picker' not in st.session_state:
+    st.session_state.show_concert_picker = False
 
-# Layout: Sidebar for friend list, main area for chat
+# Layout
 col_friends, col_chat = st.columns([1, 3])
 
 # ==================== FRIEND LIST ====================
 with col_friends:
-    st.subheader("💬 Conversations")
+    st.subheader("💬 Chats")
     
-    # Sort friends by last message time
     friends_with_last_msg = []
     for friend in friends:
         last_msg = get_last_message(user.id, friend['id'])
@@ -120,7 +160,6 @@ with col_friends:
             'timestamp': last_msg['created_at'] if last_msg else '2000-01-01'
         })
     
-    # Sort by most recent
     friends_with_last_msg.sort(key=lambda x: x['timestamp'], reverse=True)
     
     for item in friends_with_last_msg:
@@ -128,17 +167,20 @@ with col_friends:
         last_msg = item['last_message']
         unread = item['unread']
         
-        # Create clickable container
         button_label = f"**{friend['username']}**"
         if unread > 0:
             button_label += f" 🔴 ({unread})"
         
         if last_msg:
-            preview = last_msg['message'][:30] + "..." if len(last_msg['message']) > 30 else last_msg['message']
+            if last_msg.get('concert_event_id'):
+                preview = "🎟️ Shared a concert"
+            else:
+                preview = last_msg['message'][:30] + "..." if len(last_msg['message']) > 30 else last_msg['message']
             button_label += f"\n_{preview}_"
         
         if st.button(button_label, key=f"friend_{friend['id']}", use_container_width=True):
             st.session_state.selected_friend = friend
+            st.session_state.show_concert_picker = False
             mark_as_read(user.id, friend['id'])
             st.rerun()
         
@@ -150,55 +192,113 @@ with col_chat:
         friend = st.session_state.selected_friend
         
         # Chat header
-        col_header, col_back = st.columns([4, 1])
+        col_h1, col_h2, col_h3 = st.columns([3, 1, 1])
         
-        with col_header:
-            st.subheader(f"💬 Chat with {friend['username']}")
+        with col_h1:
+            st.subheader(f"💬 {friend['username']}")
         
-        with col_back:
-            if st.button("← Back", key="back_btn"):
-                st.session_state.selected_friend = None
+        with col_h2:
+            if st.button("🎟️ Share Concert", key="share_concert_btn", use_container_width=True):
+                st.session_state.show_concert_picker = not st.session_state.show_concert_picker
                 st.rerun()
+        
+        with col_h3:
+            if st.button("← Back", key="back_btn", use_container_width=True):
+                st.session_state.selected_friend = None
+                st.session_state.show_concert_picker = False
+                st.rerun()
+        
+        # Concert picker (if enabled)
+        if st.session_state.show_concert_picker:
+            st.markdown("---")
+            st.markdown("### 🎟️ Share a Concert")
+            
+            user_concerts = get_user_concerts()
+            
+            if user_concerts:
+                # Show concert selector
+                concert_options = {}
+                for concert in user_concerts[:20]:
+                    label = f"{concert['artist_name']} - {concert['venue_name']} ({concert['date']})"
+                    concert_options[label] = concert
+                
+                selected_label = st.selectbox("Choose a concert:", list(concert_options.keys()))
+                
+                col_preview, col_send_concert = st.columns([3, 1])
+                
+                with col_preview:
+                    if selected_label:
+                        selected_concert = concert_options[selected_label]
+                        display_concert_card(selected_concert, in_chat=False)
+                
+                with col_send_concert:
+                    st.write("")
+                    st.write("")
+                    if st.button("📤 Send Concert", key="send_concert_btn", use_container_width=True, type="primary"):
+                        message_text = f"Hey! Let's go to this concert together! 🎵"
+                        result = send_message(user.id, friend['id'], message_text, concert_data=selected_concert)
+                        
+                        if result['success']:
+                            st.session_state.show_concert_picker = False
+                            st.success("Concert shared!")
+                            st.rerun()
+                        else:
+                            st.error("Failed to share concert")
+            else:
+                st.info("You haven't saved any concerts yet. Go to Discover Concerts first!")
+                if st.button("🔍 Discover Concerts"):
+                    st.switch_page("pages/2_discover_concerts.py")
         
         st.markdown("---")
         
-        # Messages container
-        messages_container = st.container()
+        # Messages
+        messages = get_conversation(user.id, friend['id'])
         
-        with messages_container:
-            messages = get_conversation(user.id, friend['id'])
-            
-            if not messages:
-                st.info(f"No messages yet. Say hi to {friend['username']}!")
-            else:
-                for msg in messages:
-                    is_sent = msg['sender_id'] == user.id
-                    
-                    # Create message bubble
-                    if is_sent:
-                        # Right-aligned (sent by you)
-                        st.markdown(f"""
-                        <div style="text-align: right; margin: 10px 0;">
-                            <div style="display: inline-block; background: #1DB954; color: white; padding: 10px 15px; border-radius: 15px; max-width: 70%; text-align: left;">
-                                {msg['message']}
+        if not messages:
+            st.info(f"No messages yet. Say hi to {friend['username']}!")
+        else:
+            for msg in messages:
+                is_sent = msg['sender_id'] == user.id
+                timestamp = datetime.fromisoformat(msg['created_at'].replace('Z', '+00:00')).strftime('%I:%M %p')
+                
+                if is_sent:
+                    # Sent message
+                    with st.container():
+                        col_space, col_msg = st.columns([1, 4])
+                        with col_msg:
+                            st.markdown(f"""
+                            <div style="text-align: right;">
+                                <div style="display: inline-block; background: #1DB954; color: white; padding: 10px 15px; border-radius: 15px; max-width: 100%; text-align: left;">
+                                    {msg['message']}
+                                </div>
+                                <div style="font-size: 0.75em; opacity: 0.6; margin-top: 2px;">
+                                    {timestamp}
+                                </div>
                             </div>
-                            <div style="font-size: 0.8em; opacity: 0.6; margin-top: 2px;">
-                                {datetime.fromisoformat(msg['created_at'].replace('Z', '+00:00')).strftime('%I:%M %p')}
+                            """, unsafe_allow_html=True)
+                            
+                            # Show concert card if attached
+                            if msg.get('concert_data'):
+                                display_concert_card(msg['concert_data'], in_chat=True)
+                else:
+                    # Received message
+                    with st.container():
+                        col_msg, col_space = st.columns([4, 1])
+                        with col_msg:
+                            st.markdown(f"""
+                            <div style="text-align: left;">
+                                <div style="display: inline-block; background: #f0f0f0; color: black; padding: 10px 15px; border-radius: 15px; max-width: 100%; text-align: left;">
+                                    {msg['message']}
+                                </div>
+                                <div style="font-size: 0.75em; opacity: 0.6; margin-top: 2px;">
+                                    {timestamp}
+                                </div>
                             </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    else:
-                        # Left-aligned (received)
-                        st.markdown(f"""
-                        <div style="text-align: left; margin: 10px 0;">
-                            <div style="display: inline-block; background: #f0f0f0; color: black; padding: 10px 15px; border-radius: 15px; max-width: 70%; text-align: left;">
-                                {msg['message']}
-                            </div>
-                            <div style="font-size: 0.8em; opacity: 0.6; margin-top: 2px;">
-                                {datetime.fromisoformat(msg['created_at'].replace('Z', '+00:00')).strftime('%I:%M %p')}
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                            """, unsafe_allow_html=True)
+                            
+                            # Show concert card if attached
+                            if msg.get('concert_data'):
+                                display_concert_card(msg['concert_data'], in_chat=True)
         
         st.markdown("---")
         
@@ -210,7 +310,7 @@ with col_chat:
                 message_text = st.text_input("Type a message...", label_visibility="collapsed", placeholder=f"Message {friend['username']}...")
             
             with col_send:
-                send_btn = st.form_submit_button("📤 Send", use_container_width=True)
+                send_btn = st.form_submit_button("📤", use_container_width=True)
             
             if send_btn and message_text.strip():
                 result = send_message(user.id, friend['id'], message_text.strip())
@@ -218,29 +318,19 @@ with col_chat:
                 if result['success']:
                     st.rerun()
                 else:
-                    st.error("Failed to send message")
+                    st.error("Failed to send")
         
-        # Auto-refresh button
         if st.button("🔄 Refresh", key="refresh_chat"):
             st.rerun()
         
     else:
-        # No friend selected
-        st.info("👈 Select a friend from the list to start chatting")
-        
-        # Show friend suggestions
-        st.subheader("💡 Your Friends:")
-        for friend in friends[:5]:
-            st.write(f"• **{friend['username']}**")
+        st.info("👈 Select a friend to start chatting")
 
 # ==================== SIDEBAR ====================
 with st.sidebar:
-    st.markdown("### 📊 Message Stats")
+    st.markdown("### 📊 Stats")
     
-    # Total unread
-    total_unread = 0
-    for friend in friends:
-        total_unread += get_unread_count(user.id, friend['id'])
+    total_unread = sum(get_unread_count(user.id, f['id']) for f in friends)
     
-    st.metric("Unread Messages", total_unread)
-    st.metric("Conversations", len(friends))
+    st.metric("Unread", total_unread)
+    st.metric("Friends", len(friends))
