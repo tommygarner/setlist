@@ -24,7 +24,6 @@ if st.session_state.scroll_to_top:
     )
     st.session_state.scroll_to_top = False
 
-
 # ==================== SPOTIFY API SETUP ====================
 SPOTIFY_CLIENT_ID = "684f79d886db4d05829a92140ea463c1"
 SPOTIFY_CLIENT_SECRET = "42a5ba77b17a4bd9934cfe12d37a4a7c"
@@ -194,14 +193,12 @@ if 'show_review_page' not in st.session_state:
 if st.session_state.show_review_page:
     st.title("📝 Review & Edit Your Choices")
 
-    # Back button
     if st.button("⬅️ Back to Swiping"):
         st.session_state.show_review_page = False
         st.rerun()
 
     st.markdown("---")
 
-    # Two columns for liked and disliked
     col1, col2 = st.columns(2)
 
     with col1:
@@ -217,7 +214,7 @@ if st.session_state.show_review_page:
                         st.session_state.prefs['liked'].remove(artist)
                         st.session_state.prefs['disliked'].append(artist)
                         save_preference(user.id, artist, 'disliked')
-			st.session_state.scroll_to_top = True
+                        st.session_state.scroll_to_top = True
                         st.rerun()
         else:
             st.caption("No liked artists yet")
@@ -235,7 +232,7 @@ if st.session_state.show_review_page:
                         st.session_state.prefs['disliked'].remove(artist)
                         st.session_state.prefs['liked'].append(artist)
                         save_preference(user.id, artist, 'liked')
-			st.session_state.scroll_to_top = True
+                        st.session_state.scroll_to_top = True
                         st.rerun()
         else:
             st.caption("No passed artists yet")
@@ -244,10 +241,8 @@ if st.session_state.show_review_page:
 
 # ==================== MAIN UI ====================
 st.title("🎸 Artist Swipe")
-st.markdown('<div id="top"></div>', unsafe_allow_html=True)
 st.markdown("Discover artists and decide if you want to see them live!")
 
-# Progress
 total_artists = len(st.session_state.artists_list)
 
 if total_artists == 0:
@@ -258,7 +253,6 @@ if total_artists == 0:
 
 progress = st.session_state.current_idx / max(total_artists, 1)
 
-# Top metrics
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("Progress", f"{st.session_state.current_idx}/{total_artists}")
@@ -272,7 +266,6 @@ with col4:
 
 st.progress(progress)
 
-# Check if done
 if st.session_state.current_idx >= total_artists:
     st.success("🎉 You've reviewed all artists!")
     st.balloons()
@@ -286,7 +279,6 @@ if st.session_state.current_idx >= total_artists:
     col_a, col_b = st.columns(2)
     with col_a:
         if st.button("🔄 Reset and Start Over", use_container_width=True):
-            # Clear all preferences from database
             for artist in st.session_state.prefs['liked']:
                 supabase.table("preferences").delete().eq("user_id", user.id).eq("artist_name", artist).execute()
             for artist in st.session_state.prefs['disliked']:
@@ -302,14 +294,12 @@ if st.session_state.current_idx >= total_artists:
 
     st.stop()
 
-# Current artist
 artist = st.session_state.artists_list[st.session_state.current_idx]
 df = load_concerts(user.id)
 artist_shows = df[df['artist_name'] == artist].sort_values('date')
 show_count = len(artist_shows)
 next_show = artist_shows.iloc[0] if show_count > 0 else None
 
-# ==================== SPOTIFY DATA ====================
 spotify_data = None
 top_tracks = []
 albums = []
@@ -321,7 +311,6 @@ if st.session_state.spotify_token:
             top_tracks = get_artist_top_tracks(spotify_data['spotify_id'], st.session_state.spotify_token, limit=10)
             albums = get_artist_albums(spotify_data['spotify_id'], st.session_state.spotify_token)
 
-# ==================== ARTIST CARD ====================
 st.markdown("---")
 
 col_img, col_info = st.columns([1, 2])
@@ -343,7 +332,6 @@ with col_info:
         if spotify_data['genres']:
             st.markdown(f"🎵 **Genres:** {', '.join(spotify_data['genres'])}")
 
-    # Show concert details
     if next_show is not None:
         st.markdown("### 🎫 Concert Details")
         st.markdown(f"**Event:** {next_show['event_name']}")
@@ -353,7 +341,6 @@ with col_info:
         if next_show.get('time'):
             st.markdown(f"**Time:** {next_show['time']}")
 
-# ==================== TOP TRACKS ====================
 if top_tracks:
     st.markdown("---")
     st.markdown("### 🎵 Top 5 Tracks")
@@ -366,12 +353,9 @@ if top_tracks:
             if track['preview_url']:
                 st.audio(track['preview_url'], format="audio/mp3")
             elif track.get('spotify_url'):
-                safe_key = f"{st.session_state.current_idx}_{i}"
-                
                 col_a, col_b = st.columns(2)
                 
                 with col_a:
-                    # Spotify button - opens in new tab
                     spotify_html = f"""
                     <a href="{track['spotify_url']}" target="_blank" style="text-decoration: none;">
                         <button style="
@@ -392,7 +376,6 @@ if top_tracks:
                     st.markdown(spotify_html, unsafe_allow_html=True)
                 
                 with col_b:
-                    # YouTube button - opens in new tab
                     youtube_url = get_youtube_search_url(track['artist'], track['name'])
                     youtube_html = f"""
                     <a href="{youtube_url}" target="_blank" style="text-decoration: none;">
@@ -415,10 +398,8 @@ if top_tracks:
             else:
                 st.caption("🔇 No preview available")
             
-            st.markdown("")  # Spacing
+            st.markdown("")
 
-
-# ==================== ALBUMS ====================
 if albums:
     st.markdown("---")
     st.markdown("### 💿 Top 5 Albums")
@@ -429,11 +410,9 @@ if albums:
                 st.image(album['image'], use_container_width=True)
             st.caption(album['name'])
 
-# ==================== ACTION BUTTONS ====================
 st.markdown("---")
 st.markdown("### What do you think?")
 
-# Main swipe buttons
 col1, col2, col3 = st.columns([1, 1, 1])
 
 with col1:
@@ -450,7 +429,6 @@ with col1:
         st.rerun()
 
 with col2:
-    # Undo button
     if st.session_state.current_idx > 0:
         if st.button("↩️ Undo", use_container_width=True, type="secondary"):
             last_history = st.session_state.prefs['swipe_history'][-1] if st.session_state.prefs['swipe_history'] else None
@@ -484,10 +462,8 @@ with col3:
         st.session_state.scroll_to_top = True
         st.rerun()
 
-# Show progress
 st.caption(f"Concert {st.session_state.current_idx + 1} of {total_artists}")
 
-# ==================== SIDEBAR ====================
 with st.sidebar:
     st.markdown("### 📊 Your Stats")
     st.metric("✅ Liked Artists", len(st.session_state.prefs['liked']))
