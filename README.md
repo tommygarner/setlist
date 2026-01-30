@@ -4,6 +4,8 @@
 
 AI-powered concert discovery that matches your music taste with upcoming shows in your city. Connect your Spotify, discover concerts, swipe on artists, and find friends to go with.
 
+🚀 **[Try it live!](https://tommygarner-setlist.streamlit.app)**
+
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![Streamlit](https://img.shields.io/badge/streamlit-1.28+-red.svg)
