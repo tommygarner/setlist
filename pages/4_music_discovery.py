@@ -9,7 +9,7 @@ import time
 st.set_page_config(page_title="Music Discovery", page_icon="✨", layout="wide")
 
 # ==================== SEATGEEK API SETUP ====================
-SEATGEEK_CLIENT_ID = "MjA0NDkzNzh8MTc2MjgzNTE2MC4xNDA5OTI0"
+# Client ID loaded from secrets in functions that need it
 
 # ==================== SUPABASE CONNECTION ====================
 def init_supabase() -> Client:
@@ -156,7 +156,7 @@ with tab1:
         with st.spinner("Searching SeatGeek for concerts you'll love..."):
             # Get fresh concerts from API
             params = {
-                "client_id": SEATGEEK_CLIENT_ID,
+                "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
                 "venue.city": "Austin",
                 "venue.state": "TX",
                 "taxonomies.name": "concert",
@@ -257,7 +257,7 @@ with tab2:
         sunday = friday + timedelta(days=2)
         
         params = {
-            "client_id": SEATGEEK_CLIENT_ID,
+            "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
             "venue.city": "Austin",
             "venue.state": "TX",
             "taxonomies.name": "concert",
@@ -302,7 +302,7 @@ with tab3:
     if st.button("🎲 Find a Random Concert", type="primary", use_container_width=True):
         with st.spinner("Finding a surprise..."):
             params = {
-                "client_id": SEATGEEK_CLIENT_ID,
+                "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
                 "venue.city": "Austin",
                 "venue.state": "TX",
                 "taxonomies.name": "concert",
@@ -346,7 +346,7 @@ with tab4:
         if st.button("✨ Get Recommendations", type="primary", use_container_width=True):
             with st.spinner("Finding new artists..."):
                 params = {
-                    "client_id": SEATGEEK_CLIENT_ID,
+                    "client_id": st.secrets["seatgeek"]["CLIENT_ID"],
                     "venue.city": "Austin",
                     "venue.state": "TX",
                     "taxonomies.name": "concert",

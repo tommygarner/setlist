@@ -25,12 +25,11 @@ if st.session_state.scroll_to_top:
     st.session_state.scroll_to_top = False
 
 # ==================== SPOTIFY API SETUP ====================
-SPOTIFY_CLIENT_ID = "684f79d886db4d05829a92140ea463c1"
-SPOTIFY_CLIENT_SECRET = "42a5ba77b17a4bd9934cfe12d37a4a7c"
-
 def get_spotify_token():
-    """Get Spotify access token"""
-    auth_string = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
+    """Get Spotify access token using client credentials flow"""
+    client_id = st.secrets["spotify"]["CLIENT_ID"]
+    client_secret = st.secrets["spotify"]["CLIENT_SECRET"]
+    auth_string = f"{client_id}:{client_secret}"
     auth_bytes = auth_string.encode("utf-8")
     auth_base64 = base64.b64encode(auth_bytes).decode("utf-8")
 

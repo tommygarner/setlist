@@ -1,0 +1,60 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+pip-log.txt
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment and secrets (IMPORTANT: don't bake secrets into image)
+.env
+.env.local
+.env.*.local
+.streamlit/secrets.toml
+
+# Data files
+data/
+*.xlsx
+*.csv
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation (optional - remove if you want docs in container)
+*.md
+!README.md
+
+# Dev container (not needed for production)
+.devcontainer/
+
+# Cache
+.cache/
