@@ -1,10 +1,10 @@
-# 🎵 The Setlist
+# The Setlist
 
 **Your personalized concert planner**
 
 AI-powered concert discovery that matches your music taste with upcoming shows in your city. Connect your Spotify, discover concerts, swipe on artists, and find friends to go with.
 
-🚀 **[Try it live!](https://tommygarner-setlist.streamlit.app)**
+**[Try it live!](https://tommygarner-setlist.streamlit.app)**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
@@ -14,21 +14,21 @@ AI-powered concert discovery that matches your music taste with upcoming shows i
 
 ---
 
-## ✨ Features
+## Features
 
 | Feature | Description |
 |---------|-------------|
-| 🎵 **Spotify Integration** | Connect your account and auto-import your favorite artists |
-| 🎤 **Concert Discovery** | Find shows from Ticketmaster + SeatGeek in your city |
-| 🎸 **Artist Swipe** | Tinder-style interface to rate artists and build preferences |
-| 📊 **Smart Recommendations** | "For You" feed based on your music taste |
-| 👥 **Social Features** | Add friends, see music compatibility, share concerts |
-| 💬 **Messaging** | DM friends with embedded concert cards |
-| 🎟️ **Concert Tracking** | Mark shows as "Going" or "Interested" |
+| **Spotify Integration** | Connect your account and auto-import your favorite artists |
+| **Concert Discovery** | Find shows from Ticketmaster + SeatGeek in your city |
+| **Artist Swipe** | Tinder-style interface to rate artists and build preferences |
+| **Smart Recommendations** | "For You" feed based on your music taste |
+| **Social Features** | Add friends, see music compatibility, share concerts |
+| **Messaging** | DM friends with embedded concert cards |
+| **Concert Tracking** | Mark shows as "Going" or "Interested" |
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Option 1: Run with Docker (Recommended)
 
@@ -42,7 +42,6 @@ cd setlist
 
 #### Step 2: Create your secrets file
 ```bash
-# Copy the template
 cp .streamlit/secrets.toml.example .streamlit/secrets.toml
 ```
 
@@ -116,14 +115,14 @@ The app opens at **http://localhost:8501**
 
 ---
 
-## 🔑 Getting API Keys
+## Getting API Keys
 
 ### 1. Supabase (Database + Auth)
 1. Go to [supabase.com](https://supabase.com) and create a free account
 2. Create a new project
-3. Go to **Settings → API** and copy:
-   - `Project URL` → `SUPABASE_URL`
-   - `anon public` key → `SUPABASE_KEY`
+3. Go to **Settings > API** and copy:
+   - `Project URL` > `SUPABASE_URL`
+   - `anon public` key > `SUPABASE_KEY`
 
 ### 2. Spotify API
 1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
@@ -143,7 +142,7 @@ The app opens at **http://localhost:8501**
 
 ---
 
-## 🐳 Docker Commands Reference
+## Docker Commands Reference
 
 ```bash
 # Build and start (foreground)
@@ -164,7 +163,7 @@ docker-compose up --build --force-recreate
 
 ---
 
-## 🧪 Running Tests
+## Running Tests
 
 ```bash
 # Run all tests
@@ -179,7 +178,7 @@ pytest tests/test_app.py -v
 
 ---
 
-## 🌐 Deploying to Production
+## Deploying to Production
 
 ### Railway (Recommended)
 
@@ -217,7 +216,7 @@ fly deploy
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 setlist/
@@ -230,10 +229,10 @@ setlist/
 │   ├── 5_friends.py                # Friend system + compatibility
 │   ├── 6_messages.py               # Direct messaging
 │   └── 7_my_concerts.py            # Concert watchlist
-├── utils/                          
+├── utils/
 │   ├── __init__.py
 │   └── demo_data.py                # Mock data for demo mode
-├── tests/                          
+├── tests/
 │   ├── __init__.py
 │   └── test_app.py                 # 16 automated tests
 ├── .github/workflows/
@@ -249,7 +248,7 @@ setlist/
 
 ---
 
-## 🎯 Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |-------|------------|
@@ -265,7 +264,7 @@ setlist/
 
 ---
 
-## 🎯 Roadmap
+## Roadmap
 
 - [x] Concert discovery dashboard
 - [x] Artist preference swipe interface
@@ -284,19 +283,19 @@ setlist/
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 This is a personal project, but feedback and suggestions are welcome! Feel free to open an issue or submit a PR.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## 👤 Author
+## Author
 
 **Tommy Garner**
 - GitHub: [@tommygarner](https://github.com/tommygarner)
@@ -304,4 +303,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**The Setlist** - Build your perfect lineup 🎸
+*This repository was refined and cleaned up with [Claude Code](https://claude.ai/code).*
