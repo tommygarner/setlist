@@ -11,6 +11,11 @@ Connect your Spotify, discover upcoming shows matched to your taste, swipe on ar
 
 ---
 
+![Discover Concerts](docs/screenshot-discover.png)
+![Artist Swipe](docs/screenshot-swipe.png)
+
+---
+
 ## How it works
 
 1. Connect your Spotify account
