@@ -1,306 +1,172 @@
 # The Setlist
 
-**Your personalized concert planner**
+**Personalized concert discovery for Austin**
 
-AI-powered concert discovery that matches your music taste with upcoming shows in your city. Connect your Spotify, discover concerts, swipe on artists, and find friends to go with.
-
-**[Try it live!](https://tommygarner-setlist.streamlit.app)**
+Connect your Spotify, discover upcoming shows matched to your taste, swipe on artists, and coordinate with friends.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.11+-blue.svg)
-![Streamlit](https://img.shields.io/badge/streamlit-1.28+-red.svg)
+![React](https://img.shields.io/badge/react-18-blue.svg)
+![FastAPI](https://img.shields.io/badge/fastapi-0.110-green.svg)
 ![Docker](https://img.shields.io/badge/docker-ready-blue.svg)
-![Tests](https://img.shields.io/badge/tests-16%20passing-brightgreen.svg)
+
+---
+
+## How it works
+
+1. Connect your Spotify account
+2. The app scans your liked songs and top artists
+3. Ticketmaster is searched for each artist (30mi radius, Austin)
+4. Concerts are ranked by an affinity score — your most-listened and explicitly liked artists float to the top
+5. Swipe on artists to tune recommendations
+6. Share shows with friends via DM
 
 ---
 
 ## Features
 
-| Feature | Description |
-|---------|-------------|
-| **Spotify Integration** | Connect your account and auto-import your favorite artists |
-| **Concert Discovery** | Find shows from Ticketmaster + SeatGeek in your city |
-| **Artist Swipe** | Tinder-style interface to rate artists and build preferences |
-| **Smart Recommendations** | "For You" feed based on your music taste |
-| **Social Features** | Add friends, see music compatibility, share concerts |
-| **Messaging** | DM friends with embedded concert cards |
-| **Concert Tracking** | Mark shows as "Going" or "Interested" |
+| | |
+|---|---|
+| **Discover Concerts** | Async fan-out to Ticketmaster across all your Spotify artists. SSE progress bar streams real steps. Results cached 24h. |
+| **Affinity Scoring** | Combines Spotify short/medium-term top artists with explicit swipe preferences. Disliked artists filtered out entirely. |
+| **Artist Swipe** | Tinder-style queue with artist image, top 5 tracks (album art + Spotify/YouTube links), top 3 albums. Session-persistent index. Next artist prefetched while you read the current one. |
+| **Music Discovery** | For You / Similar Artists / This Weekend / Surprise Me. "Similar Artists" uses Spotify related-artists API to find acts you don't know but would like, then finds their Austin shows. |
+| **My Concerts** | Only shows you've explicitly marked Going or Interested — not your full discovered list. |
+| **Friends + Messages** | Friend requests, DMs, concert cards shared inline. |
 
 ---
 
-## Quick Start
+## Stack
 
-### Option 1: Run with Docker (Recommended)
-
-**Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed
-
-#### Step 1: Clone the repository
-```bash
-git clone https://github.com/yourusername/setlist.git
-cd setlist
-```
-
-#### Step 2: Create your secrets file
-```bash
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
-```
-
-#### Step 3: Add your API keys
-Open `.streamlit/secrets.toml` in a text editor and fill in your credentials:
-
-```toml
-[connections.supabase]
-SUPABASE_URL = "https://your-project.supabase.co"
-SUPABASE_KEY = "your-supabase-anon-key"
-
-[spotify]
-CLIENT_ID = "your-spotify-client-id"
-CLIENT_SECRET = "your-spotify-client-secret"
-REDIRECT_URI = "http://localhost:8501/1_connect_spotify"
-
-[ticketmaster]
-API_KEY = "your-ticketmaster-api-key"
-CITY = "Austin"
-STATE_CODE = "TX"
-SEARCH_RADIUS = "100"
-
-[seatgeek]
-CLIENT_ID = "your-seatgeek-client-id"
-```
-
-#### Step 4: Build and run
-```bash
-docker-compose up --build
-```
-
-#### Step 5: Open the app
-Navigate to **http://localhost:8501** in your browser.
+| Layer | Tech |
+|---|---|
+| Frontend | React 18, Vite, Tailwind CSS |
+| Backend | FastAPI, Python 3.11, uvicorn |
+| Auth + DB | Supabase (PostgreSQL + Auth) |
+| Music data | Spotify Web API |
+| Concert data | Ticketmaster Discovery API |
+| Deployment | Docker + nginx |
 
 ---
 
-### Option 2: Run Locally (Without Docker)
+## Local development
 
-#### Step 1: Clone and setup
+**Prerequisites:** Python 3.11+, Node 18+, a Supabase project, Spotify app, Ticketmaster API key.
+
 ```bash
-git clone https://github.com/yourusername/setlist.git
-cd setlist
-
-# Create virtual environment
-python -m venv venv
-
-# Activate it
-# Windows:
-venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
-```
-
-#### Step 2: Install dependencies
-```bash
+# Backend
+cp backend/.env.example backend/.env
+# fill in backend/.env
+cd backend
 pip install -r requirements.txt
+python -m uvicorn main:app --reload
+
+# Frontend (separate terminal)
+cp frontend/.env.example frontend/.env
+# fill in frontend/.env
+cd frontend
+npm install
+npm run dev
 ```
 
-#### Step 3: Configure secrets
-```bash
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
-# Edit .streamlit/secrets.toml with your API keys
+App runs at `http://localhost:5173`.
+
+### Supabase setup
+
+Run this SQL in your Supabase SQL editor once:
+
+```sql
+create table if not exists profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  username text, email text,
+  spotify_connected boolean default false,
+  spotify_access_token text, spotify_refresh_token text, spotify_token_expires_at timestamptz,
+  created_at timestamptz default now()
+);
+create or replace function handle_new_user() returns trigger as $$
+begin
+  insert into public.profiles (id, email, username)
+  values (new.id, new.email, new.raw_user_meta_data->>'username')
+  on conflict (id) do nothing;
+  return new;
+end;
+$$ language plpgsql security definer;
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created after insert on auth.users
+  for each row execute procedure handle_new_user();
+
+create table if not exists preferences (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  artist_name text not null, preference text not null,
+  created_at timestamptz default now(),
+  unique(user_id, artist_name)
+);
+create table if not exists concerts_discovered (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  event_id text unique, artist_name text, event_name text,
+  venue_name text, city text, state text, date text, time text,
+  ticket_url text, min_price numeric, max_price numeric, source text,
+  affinity_score float default 0,
+  created_at timestamptz default now()
+);
+create table if not exists concert_attendance (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  event_id text, status text, concert_data jsonb,
+  created_at timestamptz default now(),
+  unique(user_id, event_id)
+);
+create table if not exists friendships (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references profiles(id) on delete cascade,
+  friend_id uuid references profiles(id) on delete cascade,
+  status text default 'pending',
+  created_at timestamptz default now()
+);
+create table if not exists messages (
+  id uuid primary key default gen_random_uuid(),
+  sender_id uuid references profiles(id) on delete cascade,
+  receiver_id uuid references profiles(id) on delete cascade,
+  message text not null, read boolean default false,
+  concert_event_id text, concert_data jsonb,
+  created_at timestamptz default now()
+);
 ```
 
-#### Step 4: Run the app
-```bash
-streamlit run app.py
-```
-
-The app opens at **http://localhost:8501**
+Also add `http://localhost:8000/api/spotify/callback` as a redirect URI in your Spotify Developer Dashboard.
 
 ---
 
-## Getting API Keys
-
-### 1. Supabase (Database + Auth)
-1. Go to [supabase.com](https://supabase.com) and create a free account
-2. Create a new project
-3. Go to **Settings > API** and copy:
-   - `Project URL` > `SUPABASE_URL`
-   - `anon public` key > `SUPABASE_KEY`
-
-### 2. Spotify API
-1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
-2. Create a new app
-3. Copy **Client ID** and **Client Secret**
-4. Add `http://localhost:8501/1_connect_spotify` to Redirect URIs
-
-### 3. Ticketmaster API
-1. Go to [developer.ticketmaster.com](https://developer.ticketmaster.com)
-2. Sign up for a free account
-3. Copy your **Consumer Key** (this is your API key)
-
-### 4. SeatGeek API
-1. Go to [seatgeek.com/account/develop](https://seatgeek.com/account/develop)
-2. Register for API access
-3. Copy your **Client ID**
-
----
-
-## Docker Commands Reference
-
-```bash
-# Build and start (foreground)
-docker-compose up --build
-
-# Start in background
-docker-compose up -d
-
-# Stop the app
-docker-compose down
-
-# View logs
-docker-compose logs -f
-
-# Rebuild after code changes
-docker-compose up --build --force-recreate
-```
-
----
-
-## Running Tests
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Run with coverage
-pytest tests/ -v --cov=utils
-
-# Run specific test file
-pytest tests/test_app.py -v
-```
-
----
-
-## Deploying to Production
-
-### Railway (Recommended)
-
-1. Push your code to GitHub
-2. Go to [railway.app](https://railway.app) and create a new project
-3. Connect your GitHub repository
-4. Add environment variables in Railway dashboard:
-   - `SUPABASE_URL`, `SUPABASE_KEY`
-   - `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`
-   - `TICKETMASTER_API_KEY`, `SEATGEEK_CLIENT_ID`
-5. Update Spotify Redirect URI to your Railway URL
-
-### Fly.io
+## Docker deployment
 
 ```bash
-# Install flyctl
-curl -L https://fly.io/install.sh | sh
+# Create a .env at repo root with Supabase public keys for the frontend build
+echo "VITE_SUPABASE_URL=https://xxx.supabase.co" > .env
+echo "VITE_SUPABASE_ANON_KEY=xxx" >> .env
 
-# Launch app
-fly launch
+# Fill in backend/.env with all secrets
+cp backend/.env.example backend/.env
 
-# Set secrets
-fly secrets set SUPABASE_URL="..." SUPABASE_KEY="..."
-
-# Deploy
-fly deploy
+docker compose up --build
 ```
 
-### Streamlit Community Cloud
+Frontend at `http://localhost`, API at `http://localhost:8000`.
 
-1. Push to GitHub (public repo)
-2. Go to [share.streamlit.io](https://share.streamlit.io)
-3. Connect your repo
-4. Add secrets in the Streamlit dashboard
+The nginx config proxies `/api/*` to the FastAPI backend and handles SPA routing. SSE buffering is disabled on the proxy so the discover progress bar streams correctly.
 
 ---
 
-## Project Structure
+## Architecture notes
 
-```
-setlist/
-├── app.py                          # Main entry point + auth
-├── pages/                          # Streamlit multi-page app
-│   ├── 1_connect_spotify.py        # Spotify OAuth flow
-│   ├── 2_discover_concerts.py      # Concert search (TM + SeatGeek)
-│   ├── 3_artist_swipe.py           # Tinder-style artist rating
-│   ├── 4_music_discovery.py        # Recommendations engine
-│   ├── 5_friends.py                # Friend system + compatibility
-│   ├── 6_messages.py               # Direct messaging
-│   └── 7_my_concerts.py            # Concert watchlist
-├── utils/
-│   ├── __init__.py
-│   └── demo_data.py                # Mock data for demo mode
-├── tests/
-│   ├── __init__.py
-│   └── test_app.py                 # 16 automated tests
-├── .github/workflows/
-│   └── ci.yml                      # GitHub Actions CI/CD
-├── .streamlit/
-│   └── secrets.toml.example        # Secrets template
-├── Dockerfile                      # Docker build config
-├── docker-compose.yml              # Docker Compose config
-├── requirements.txt                # Python dependencies
-├── CLAUDE.md                       # AI assistant context
-└── README.md                       # This file
-```
+**Affinity scoring** — each discovered concert gets a score at discover time:
+- Explicitly liked via swipe: +100
+- In Spotify short-term top artists: up to +80 (rank-weighted)
+- In Spotify medium-term top artists: up to +40 (rank-weighted)
+- Explicitly disliked: filtered out
 
----
+Scores are stored in `concerts_discovered.affinity_score`. The GET endpoint also applies a live preferences adjustment so swipes made after the last discover run take effect immediately.
 
-## Tech Stack
+**Discovery cache** — `POST /api/concerts/discover` checks the age of your existing `concerts_discovered` rows. If fresher than 24h, it streams a cache-hit message and returns immediately. Pass `?force=true` to bypass.
 
-| Layer | Technology |
-|-------|------------|
-| **Frontend** | Streamlit |
-| **Backend/Auth** | Supabase (PostgreSQL + Auth) |
-| **Music Data** | Spotify Web API |
-| **Concert Data** | Ticketmaster + SeatGeek APIs |
-| **Async HTTP** | aiohttp |
-| **Data Processing** | Pandas |
-| **Containerization** | Docker |
-| **CI/CD** | GitHub Actions |
-| **Testing** | pytest |
-
----
-
-## Roadmap
-
-- [x] Concert discovery dashboard
-- [x] Artist preference swipe interface
-- [x] Spotify API integration
-- [x] Ticketmaster + SeatGeek integration
-- [x] User authentication (Supabase)
-- [x] Friend system with compatibility scores
-- [x] Direct messaging
-- [x] Docker deployment
-- [x] CI/CD pipeline
-- [x] Automated tests
-- [ ] Push notifications
-- [ ] Calendar integration
-- [ ] Price alerts
-- [ ] Mobile app
-
----
-
-## Contributing
-
-This is a personal project, but feedback and suggestions are welcome! Feel free to open an issue or submit a PR.
-
----
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## Author
-
-**Tommy Garner**
-- GitHub: [@tommygarner](https://github.com/tommygarner)
-- LinkedIn: [My Profile](https://www.linkedin.com/in/tommy-garner/)
-
----
-
-*This repository was refined and cleaned up with [Claude Code](https://claude.ai/code).*
+**Streaming** — the discover endpoint uses FastAPI `StreamingResponse` with SSE events. The frontend reads the stream with `fetch` + `ReadableStream` (not `EventSource`) so it can send the Authorization header.
