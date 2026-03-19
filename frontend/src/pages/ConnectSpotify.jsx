@@ -25,7 +25,7 @@ export default function ConnectSpotify() {
 
   // Spotify PKCE or redirect is handled by the backend /api/spotify/auth endpoint
   const handleConnect = () => {
-    window.location.href = `/api/spotify/auth?user_id=${user.id}`
+    window.location.href = `${import.meta.env.VITE_API_URL}/api/spotify/auth?user_id=${user.id}`
   }
 
   const handleDisconnect = async () => {

@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Optional
 from supabase import Client
 
-from main import get_current_user, get_supabase
+from dependencies import get_current_user, get_supabase
 
 router = APIRouter()
 
