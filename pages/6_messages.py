@@ -1,43 +1,16 @@
 import streamlit as st
-from supabase import create_client, Client
 from datetime import datetime
 import json
+from utils.supabase_client import init_supabase, require_auth, get_friends as _get_friends
 
 st.set_page_config(page_title="Messages", page_icon="💬", layout="wide")
 
-# ==================== SUPABASE CONNECTION ====================
-def init_supabase() -> Client:
-    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-    return create_client(url, key)
-
 supabase = init_supabase()
+user = require_auth()
 
-# Check authentication
-if "authenticated" not in st.session_state or not st.session_state.authenticated:
-    st.error("❌ Please login first!")
-    if st.button("← Go to Main App", key="main_app_btn"):
-        st.switch_page("app.py")
-    st.stop()
 
-user = st.session_state.user
-
-# ==================== HELPER FUNCTIONS ====================
 def get_friends(user_id):
-    """Get accepted friends"""
-    response1 = supabase.table("friendships").select("*").eq("user_id", user_id).eq("status", "accepted").execute()
-    response2 = supabase.table("friendships").select("*").eq("friend_id", user_id).eq("status", "accepted").execute()
-    
-    friend_ids = []
-    for f in response1.data:
-        friend_ids.append(f['friend_id'])
-    for f in response2.data:
-        friend_ids.append(f['user_id'])
-    
-    if friend_ids:
-        friends = supabase.table("profiles").select("*").in_("id", friend_ids).execute()
-        return friends.data
-    return []
+    return _get_friends(supabase, user_id)
 
 def get_conversation(user1_id, user2_id, limit=50):
     """Get messages between two users"""

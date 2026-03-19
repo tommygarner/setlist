@@ -1,25 +1,11 @@
 import streamlit as st
-from supabase import create_client, Client
 import pandas as pd
+from utils.supabase_client import init_supabase, require_auth, get_friends
 
 st.set_page_config(page_title="Friends", page_icon="👥", layout="wide")
 
-# ==================== SUPABASE CONNECTION ====================
-def init_supabase() -> Client:
-    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-    return create_client(url, key)
-
 supabase = init_supabase()
-
-# Check authentication
-if "authenticated" not in st.session_state or not st.session_state.authenticated:
-    st.error("❌ Please login first!")
-    if st.button("← Go to Main App", key="main_app_btn"):
-        st.switch_page("app.py")
-    st.stop()
-
-user = st.session_state.user
+user = require_auth()
 
 # Get current user's profile
 current_user_profile = supabase.table("profiles").select("*").eq("id", user.id).execute()
@@ -94,26 +80,6 @@ def send_friend_request(user_id, friend_id):
     except Exception as e:
         return {'success': False, 'message': f'Error: {str(e)}', 'type': 'exception'}
 
-
-def get_friends(user_id):
-    """Get accepted friends"""
-    # Get friendships where user is the requester
-    response1 = supabase.table("friendships").select("*").eq("user_id", user_id).eq("status", "accepted").execute()
-    
-    # Get friendships where user is the friend
-    response2 = supabase.table("friendships").select("*").eq("friend_id", user_id).eq("status", "accepted").execute()
-    
-    friend_ids = []
-    for f in response1.data:
-        friend_ids.append(f['friend_id'])
-    for f in response2.data:
-        friend_ids.append(f['user_id'])
-    
-    # Get friend profiles
-    if friend_ids:
-        friends = supabase.table("profiles").select("*").in_("id", friend_ids).execute()
-        return friends.data
-    return []
 
 def get_pending_requests(user_id):
     """Get pending friend requests received"""
@@ -319,7 +285,7 @@ with tab1:
 with tab2:
     st.subheader("👥 My Friends")
     
-    friends = get_friends(user.id)
+    friends = get_friends(supabase, user.id)
     
     if friends:
         st.success(f"You have {len(friends)} friend(s)")
@@ -414,7 +380,7 @@ with tab4:
     st.subheader("🎵 Your Music Blend")
     st.caption("See how your taste matches with friends (like Spotify Blend!)")
     
-    friends = get_friends(user.id)
+    friends = get_friends(supabase, user.id)
     
     if friends:
         # Sort by compatibility
@@ -441,7 +407,7 @@ with tab4:
 with st.sidebar:
     st.markdown("### 📊 Your Stats")
     
-    friends_count = len(get_friends(user.id))
+    friends_count = len(get_friends(supabase, user.id))
     st.metric("Friends", friends_count)
     
     pending_count = len(get_pending_requests(user.id))

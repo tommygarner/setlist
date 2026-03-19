@@ -2,31 +2,14 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime, timedelta
-from supabase import create_client, Client
 import random
 import time
+from utils.supabase_client import init_supabase, require_auth
 
 st.set_page_config(page_title="Music Discovery", page_icon="✨", layout="wide")
 
-# ==================== SEATGEEK API SETUP ====================
-# Client ID loaded from secrets in functions that need it
-
-# ==================== SUPABASE CONNECTION ====================
-def init_supabase() -> Client:
-    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-    return create_client(url, key)
-
 supabase = init_supabase()
-
-# Check authentication
-if "authenticated" not in st.session_state or not st.session_state.authenticated:
-    st.error("❌ Please login first!")
-    if st.button("← Go to Main App", key="main_app_btn"):
-        st.switch_page("app.py")
-    st.stop()
-
-user = st.session_state.user
+user = require_auth()
 
 # ==================== HELPER FUNCTIONS ====================
 def get_user_liked_artists():

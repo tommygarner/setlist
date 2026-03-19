@@ -1,66 +1,15 @@
 import streamlit as st
-from supabase import create_client, Client
 import spotipy
-from spotipy.oauth2 import SpotifyOAuth
 import aiohttp
 import asyncio
 from datetime import datetime, timedelta
+from utils.supabase_client import init_supabase, require_auth
+from utils.spotify import get_valid_user_token
 
 st.set_page_config(page_title="🎤 Discover Concerts", page_icon="🎤", layout="wide")
 
-# Initialize Supabase
-def init_supabase() -> Client:
-    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-    return create_client(url, key)
-
 supabase = init_supabase()
-
-# Check authentication
-if "authenticated" not in st.session_state or not st.session_state.authenticated:
-    st.error("❌ Please login first!")
-    if st.button("← Go to Main App", key="main_app_btn"):
-        st.switch_page("app.py")
-    st.stop()
-
-user = st.session_state.user
-
-# Token Refresh Function
-def get_valid_spotify_token(user_id):
-    """Get valid Spotify token, refreshing if expired"""
-    try:
-        profile = supabase.table("profiles").select("*").eq("id", user_id).execute()
-        if not profile.data:
-            return None
-        
-        user_data = profile.data[0]
-        expires_at = user_data.get('spotify_token_expires_at')
-        
-        if expires_at:
-            expires_datetime = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
-            if datetime.now(expires_datetime.tzinfo) >= expires_datetime:
-                st.info("🔄 Refreshing Spotify token...")
-                auth_manager = SpotifyOAuth(
-                    client_id=st.secrets["spotify"]["CLIENT_ID"],
-                    client_secret=st.secrets["spotify"]["CLIENT_SECRET"],
-                    redirect_uri=st.secrets["spotify"]["REDIRECT_URI"],
-                    scope="user-library-read user-top-read"
-                )
-                
-                refresh_token = user_data.get('spotify_refresh_token')
-                if refresh_token:
-                    token_info = auth_manager.refresh_access_token(refresh_token)
-                    new_expires = datetime.utcnow() + timedelta(seconds=token_info['expires_in'])
-                    supabase.table("profiles").update({
-                        "spotify_access_token": token_info['access_token'],
-                        "spotify_token_expires_at": new_expires.isoformat()
-                    }).eq("id", user_id).execute()
-                    return token_info['access_token']
-        
-        return user_data.get('spotify_access_token')
-    except Exception as e:
-        st.error(f"Token refresh error: {str(e)}")
-        return None
+user = require_auth()
 
 # Spotify Functions
 def get_user_liked_artists(sp, limit=None):
@@ -323,7 +272,7 @@ if st.button("🔍 Discover Concerts", type="primary", use_container_width=True)
 if st.session_state.get('discovering', False):
     try:
         st.subheader("Step 1: Fetching Your Liked Artists")
-        access_token = get_valid_spotify_token(user.id)
+        access_token = get_valid_user_token(supabase, user.id)
         
         if not access_token:
             st.error("❌ Spotify not connected! Please connect your Spotify first.")

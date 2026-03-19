@@ -1,17 +1,11 @@
 import streamlit as st
-from supabase import create_client, Client
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import time
 from datetime import datetime, timedelta
+from utils.supabase_client import init_supabase, require_auth
 
 st.set_page_config(page_title="🎵 Connect Spotify", page_icon="🎵", layout="wide")
-
-# Initialize Supabase
-def init_supabase() -> Client:
-    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-    return create_client(url, key)
 
 supabase = init_supabase()
 
@@ -20,17 +14,7 @@ query_params = st.query_params
 if 'code' in query_params and 'spotify_oauth_code' not in st.session_state:
     st.session_state.spotify_oauth_code = query_params['code']
 
-
-# Check authentication - MUST BE AT TOP
-if "authenticated" not in st.session_state or not st.session_state.authenticated:
-    st.error("❌ Please login first!")
-    st.info("💡 After authorizing with Spotify, you need to log back into your account.")
-    if st.button("← Go to Main App to Login", key="main_app_btn", type="primary"):
-        st.switch_page("app.py")
-    st.stop()
-
-# Now safe to access user
-current_user = st.session_state.user
+current_user = require_auth()
 
 # Check if user has Spotify tokens
 def check_spotify_connection(user_id):

@@ -1,20 +1,13 @@
 import streamlit as st
-from supabase import create_client, Client
 import os
 import secrets
+from utils.supabase_client import init_supabase
 
 # Page config
 st.set_page_config(page_title="The Setlist", page_icon="🎸", layout="wide")
 
 if 'session_id' not in st.session_state:
     st.session_state.session_id = secrets.token_urlsafe(16)
-
-# Initialize Supabase connection
-def init_supabase() -> Client:
-    """Initialize Supabase client (no cache - each call gets fresh client)"""
-    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-    return create_client(url, key)
 
 supabase = init_supabase()
 

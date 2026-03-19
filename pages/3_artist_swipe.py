@@ -3,9 +3,9 @@ import json
 import pandas as pd
 from pathlib import Path
 import requests
-import base64
 from urllib.parse import quote
-from supabase import create_client, Client
+from utils.supabase_client import init_supabase, require_auth
+from utils.spotify import get_spotify_app_token
 import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Artist Swipe", page_icon="🎵", layout="wide")
@@ -25,24 +25,6 @@ if st.session_state.scroll_to_top:
     st.session_state.scroll_to_top = False
 
 # ==================== SPOTIFY API SETUP ====================
-def get_spotify_token():
-    """Get Spotify access token using client credentials flow"""
-    client_id = st.secrets["spotify"]["CLIENT_ID"]
-    client_secret = st.secrets["spotify"]["CLIENT_SECRET"]
-    auth_string = f"{client_id}:{client_secret}"
-    auth_bytes = auth_string.encode("utf-8")
-    auth_base64 = base64.b64encode(auth_bytes).decode("utf-8")
-
-    url = "https://accounts.spotify.com/api/token"
-    headers = {
-        "Authorization": f"Basic {auth_base64}",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    data = {"grant_type": "client_credentials"}
-
-    response = requests.post(url, headers=headers, data=data)
-    return response.json()["access_token"]
-
 @st.cache_data(ttl=3600)
 def search_artist_spotify(artist_name, token):
     """Search for artist on Spotify and get their info"""
@@ -112,21 +94,8 @@ def get_youtube_search_url(artist_name, track_name):
     return f"https://www.youtube.com/results?search_query={quote(query)}"
 
 # ==================== SUPABASE CONNECTION ====================
-def init_supabase() -> Client:
-    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
-    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
-    return create_client(url, key)
-
 supabase = init_supabase()
-
-# Check authentication
-if "authenticated" not in st.session_state or not st.session_state.authenticated:
-    st.error("❌ Please login first!")
-    if st.button("← Go to Main App", key="main_app_btn"):
-        st.switch_page("app.py")
-    st.stop()
-
-user = st.session_state.user
+user = require_auth()
 
 # ==================== DATABASE FUNCTIONS ====================
 @st.cache_data(ttl=60)
@@ -180,7 +149,7 @@ if 'artists_list' not in st.session_state:
 
 if 'spotify_token' not in st.session_state:
     try:
-        st.session_state.spotify_token = get_spotify_token()
+        st.session_state.spotify_token = get_spotify_app_token()
     except:
         st.error("⚠️ Spotify API credentials not configured.")
         st.session_state.spotify_token = None

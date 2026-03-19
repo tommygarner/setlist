@@ -1,6 +1,6 @@
-# CLAUDE.md - The Setlist Project Context
+# CLAUDE.md
 
-> This file provides context for AI assistants (Claude, etc.) working on this codebase.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
@@ -20,43 +20,13 @@
 | **Async HTTP** | aiohttp (parallel API requests) |
 | **Data Processing** | Pandas |
 
-## Project Structure
+## Structure
 
-```
-setlist/
-├── app.py                          # Main entry point - auth flow + dashboard
-├── pages/                          # Streamlit multi-page app pages
-│   ├── 1_connect_spotify.py        # Spotify OAuth flow
-│   ├── 2_discover_concerts.py      # Concert discovery (TM + SeatGeek)
-│   ├── 3_artist_swipe.py           # Tinder-style artist preference UI
-│   ├── 4_music_discovery.py        # "For You" recommendations
-│   ├── 5_friends.py                # Friend system + compatibility scoring
-│   ├── 6_messages.py               # DM system with concert sharing
-│   └── 7_my_concerts.py            # Concert watchlist (Going/Interested)
-├── utils/                          
-│   ├── __init__.py                 # Package init
-│   └── demo_data.py                # Mock data for demo mode
-├── tests/                          
-│   ├── __init__.py                 # Package init
-│   └── test_app.py                 # 16 automated tests (pytest)
-├── .github/workflows/
-│   └── ci.yml                      # GitHub Actions CI/CD pipeline
-├── data/                           # Local data files (gitignored)
-├── notebooks/                      
-│   └── concert_scraper.ipynb       # Data collection notebook
-├── assets/                         # Static assets (images, CSS)
-├── .devcontainer/                  
-│   └── devcontainer.json           # GitHub Codespaces config
-├── .streamlit/
-│   ├── secrets.toml                # Streamlit secrets (gitignored)
-│   └── secrets.toml.example        # Template for secrets
-├── Dockerfile                      # Docker build configuration
-├── docker-compose.yml              # Docker Compose for local dev
-├── .dockerignore                   # Files to exclude from Docker
-├── requirements.txt                # Python dependencies
-├── CLAUDE.md                       # This file (AI context)
-└── README.md                       # User-facing documentation
-```
+- `app.py` — entry point: Supabase auth, login/signup UI, dashboard stats
+- `pages/` — one file per feature (numbered for sidebar ordering)
+- `utils/demo_data.py` — mock data for demo mode (no API keys needed)
+- `tests/test_app.py` — 16 pytest tests covering demo data and file structure
+- `.streamlit/secrets.toml` — all secrets; copy from `secrets.toml.example`
 
 ## Application Flow
 
@@ -172,10 +142,6 @@ GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push:
 2. **Build job**: Builds Docker image
 3. **Push**: Pushes to GitHub Container Registry (ghcr.io)
 
-4. **Session state management**: Some inconsistency in how session state is initialized across pages.
-
-5. **Error handling**: Some API errors are silently caught without user feedback.
-
 ## Docker Deployment
 
 The project is Docker-ready with:
@@ -223,11 +189,16 @@ The project already has a `.devcontainer/devcontainer.json` for GitHub Codespace
 - **Ticketmaster**: 5000 calls/day (free tier)
 - **SeatGeek**: Liberal limits, but 406 errors occur if too many concurrent requests
 
-## Portfolio Highlights
+## Demo Mode
 
-Features worth discussing in interviews:
-1. **Async API orchestration**: Parallel requests to multiple concert APIs
-2. **OAuth implementation**: Full Spotify OAuth with token refresh
-3. **Real-time features**: Supabase for auth + data + messaging
-4. **Social features**: Friend system with compatibility scoring
-5. **UX patterns**: Tinder-style swipe interface for preferences
+Enable by setting `DEMO_MODE = true` in `.streamlit/secrets.toml`. When active, pages use `utils/demo_data.py` instead of live API calls. The `DemoUser` class in `demo_data.py` mimics the Supabase user object shape so pages don't need branching logic.
+
+## Key Patterns
+
+**Auth guard**: Every page checks `st.session_state.authenticated` at the top and calls `st.stop()` if not set. Authentication state (`user`, `authenticated`) is set in `app.py:sign_in()` and cleared in `sign_out()`.
+
+**Supabase client**: Each page instantiates its own client via a local `init_supabase()` call — no shared singleton. This is intentional to avoid Streamlit caching issues with the connection.
+
+**Async concert fetching**: `2_discover_concerts.py` uses `asyncio` + `aiohttp` to fan out requests to Ticketmaster and SeatGeek in parallel. Results are merged and deduplicated before saving to `concerts_discovered`.
+
+**Session state inconsistency (known issue)**: Pages initialize session state keys inconsistently. When adding a new page, guard every `st.session_state` read with an `if key not in st.session_state` check at the top.
