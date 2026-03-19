@@ -73,10 +73,10 @@ def get_artist_top_tracks(artist_id, token, limit=10):
 
 @st.cache_data(ttl=3600)
 def get_artist_albums(artist_id, token):
-    """Get artist's albums"""
+    """Get artist's top albums (not singles)"""
     url = f"https://api.spotify.com/v1/artists/{artist_id}/albums"
     headers = {"Authorization": f"Bearer {token}"}
-    params = {"market": "US", "limit": 5, "include_groups": "album,single"}
+    params = {"market": "US", "limit": 3, "include_groups": "album"}
 
     response = requests.get(url, headers=headers, params=params)
     albums = response.json().get('items', [])
@@ -312,71 +312,43 @@ with col_info:
 if top_tracks:
     st.markdown("---")
     st.markdown("### 🎵 Top 5 Tracks")
-    
+
     for i, track in enumerate(top_tracks[:5], 1):
         with st.container():
-            st.markdown(f"**{i}. {track['name']}**")
-            st.caption(f"from {track['album_name']}")
-            
-            if track['preview_url']:
-                st.audio(track['preview_url'], format="audio/mp3")
-            elif track.get('spotify_url'):
+            col_art, col_track = st.columns([1, 5])
+
+            with col_art:
+                if track.get('album_image'):
+                    st.image(track['album_image'], use_container_width=True)
+
+            with col_track:
+                st.markdown(f"**{i}. {track['name']}**")
+                st.caption(f"from {track['album_name']}")
+
+                if track['preview_url']:
+                    st.audio(track['preview_url'], format="audio/mp3")
+
                 col_a, col_b = st.columns(2)
-                
                 with col_a:
-                    spotify_html = f"""
-                    <a href="{track['spotify_url']}" target="_blank" style="text-decoration: none;">
-                        <button style="
-                            background-color: #1DB954;
-                            color: white;
-                            border: none;
-                            padding: 10px 20px;
-                            font-size: 16px;
-                            border-radius: 5px;
-                            cursor: pointer;
-                            width: 100%;
-                            font-weight: bold;
-                        ">
-                            🎵 Listen on Spotify
-                        </button>
-                    </a>
-                    """
-                    st.markdown(spotify_html, unsafe_allow_html=True)
-                
+                    if track.get('spotify_url'):
+                        st.link_button("🎵 Spotify", track['spotify_url'], use_container_width=True)
                 with col_b:
                     youtube_url = get_youtube_search_url(track['artist'], track['name'])
-                    youtube_html = f"""
-                    <a href="{youtube_url}" target="_blank" style="text-decoration: none;">
-                        <button style="
-                            background-color: #FF0000;
-                            color: white;
-                            border: none;
-                            padding: 10px 20px;
-                            font-size: 16px;
-                            border-radius: 5px;
-                            cursor: pointer;
-                            width: 100%;
-                            font-weight: bold;
-                        ">
-                            ▶️ Find on YouTube
-                        </button>
-                    </a>
-                    """
-                    st.markdown(youtube_html, unsafe_allow_html=True)
-            else:
-                st.caption("🔇 No preview available")
-            
+                    st.link_button("▶️ YouTube", youtube_url, use_container_width=True)
+
             st.markdown("")
 
 if albums:
     st.markdown("---")
-    st.markdown("### 💿 Top 5 Albums")
-    cols = st.columns(min(5, len(albums)))
-    for i, album in enumerate(albums[:5]):
+    st.markdown("### 💿 Top 3 Albums")
+    cols = st.columns(min(3, len(albums)))
+    for i, album in enumerate(albums[:3]):
         with cols[i]:
             if album['image']:
                 st.image(album['image'], use_container_width=True)
             st.caption(album['name'])
+            if album.get('spotify_url'):
+                st.link_button("Open in Spotify", album['spotify_url'], use_container_width=True)
 
 st.markdown("---")
 st.markdown("### What do you think?")
